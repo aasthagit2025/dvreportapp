@@ -40,7 +40,7 @@ template_df = pd.DataFrame({
 })
 
 buf = BytesIO()
-with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+with pd.ExcelWriter(buf, engine="openpyxl") as writer:
     template_df.to_excel(writer, index=False, sheet_name="Validation_Rules")
 
 st.download_button(
