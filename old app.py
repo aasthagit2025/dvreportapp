@@ -86,7 +86,7 @@ if raw_file and rules_file:
     })
 
     out = BytesIO()
-    with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
         failed_report.to_excel(writer, index=False, sheet_name="Failed_Checks")
 
     st.download_button(
