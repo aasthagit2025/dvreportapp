@@ -25,7 +25,7 @@ template_df = pd.DataFrame({
         "Straightliner",
         "Multi-Select",
         "Skip",
-        "Range",
+        "Range;Missing",
         "OpenEnd_Junk"
     ],
     "Condition": [
@@ -36,7 +36,7 @@ template_df = pd.DataFrame({
         "Q11_r1 to Q11_r12",
         "At least one selected",
         "If Q2_1=1 THEN ANSWERED ELSE BLANK",
-        "18-65",
+        "18-65;Not Null",
         "Detect junk or AI text"
     ]
 })
@@ -66,54 +66,62 @@ rules_file = st.file_uploader("Upload Filled Validation Rules (XLSX)", type=["xl
 # --------------------------------------------------
 if raw_file and rules_file:
 
-    # Read raw data
+    # Read data
     if raw_file.name.endswith(".csv"):
         df = pd.read_csv(raw_file, encoding="utf-8", low_memory=False)
     else:
         df = pd.read_excel(raw_file)
 
-    # Read rules
     rules_df = pd.read_excel(rules_file)
 
     st.success("Files uploaded successfully")
 
-    # Respondent ID = FIRST COLUMN (MANDATORY)
+    # Respondent ID = first column ALWAYS
     resp_id_col = df.columns[0]
 
     failed_rows = []
 
-    # --------------------------
+    # --------------------------------------------------
     # Apply Rules
-    # --------------------------
+    # --------------------------------------------------
     for _, rule in rules_df.iterrows():
 
         question = str(rule["Question"]).strip()
         check_types = [c.strip() for c in str(rule["Check_Type"]).split(";")]
         condition = str(rule["Condition"])
 
-        # Skip rule if question not in data
         if question not in df.columns:
             continue
 
-        # --------------------------
-        # Range Check
-        # --------------------------
-        if "Range" in check_types and "-" in condition:
-            try:
-                min_v, max_v = map(float, condition.split("-"))
-                mask = ~df[question].between(min_v, max_v, inclusive="both")
-
-                for _, row in df[mask].iterrows():
-                    failed_rows.append({
-                        "RespID": row[resp_id_col],
-                        "Question": question,
-                        "Issue": f"Out of range ({min_v}-{max_v})"
-                    })
-            except:
-                pass
+        # Split condition parts safely
+        condition_parts = [c.strip() for c in condition.split(";")]
 
         # --------------------------
-        # Missing Check
+        # RANGE CHECK (FIXED)
+        # --------------------------
+        if "Range" in check_types:
+            range_part = next((c for c in condition_parts if "-" in c), None)
+
+            if range_part:
+                try:
+                    min_v, max_v = map(float, range_part.split("-"))
+
+                    mask = (
+                        df[question].notna() &
+                        ~df[question].between(min_v, max_v, inclusive="both")
+                    )
+
+                    for _, row in df[mask].iterrows():
+                        failed_rows.append({
+                            "RespID": row[resp_id_col],
+                            "Question": question,
+                            "Issue": f"Out of range ({min_v}-{max_v})"
+                        })
+                except:
+                    pass
+
+        # --------------------------
+        # MISSING CHECK
         # --------------------------
         if "Missing" in check_types:
             mask = df[question].isna()
@@ -125,17 +133,9 @@ if raw_file and rules_file:
                     "Issue": "Missing value"
                 })
 
-        # --------------------------
-        # Placeholder hooks (future-ready)
-        # --------------------------
-        # Skip logic
-        # Straightliner
-        # Multi-select
-        # Open-end junk / AI detection
-
-    # --------------------------
+    # --------------------------------------------------
     # Final Report
-    # --------------------------
+    # --------------------------------------------------
     failed_report = pd.DataFrame(failed_rows)
 
     if failed_report.empty:
