@@ -11,12 +11,59 @@ st.set_page_config(page_title="Survey Validation Engine", layout="wide")
 st.title("📊 Survey Validation Rules & Report Generator")
 
 # --------------------------------------------------
+# DOWNLOAD VALIDATION RULE TEMPLATE (BACK + UPDATED)
+# --------------------------------------------------
+st.subheader("⬇ Download Validation Rules Template")
+
+template_df = pd.DataFrame({
+    "Question": [
+        "Q1",
+        "AGE",
+        "Q5",
+        "Q7_",
+        "Q12r",
+        "Q2_",
+        "OE1"
+    ],
+    "Check_Type": [
+        "Range;Missing",
+        "Range;Missing",
+        "Skip;Range",
+        "Straightliner;Range",
+        "Straightliner;Range",
+        "Skip;Multi-Select",
+        "Skip;OpenEnd_Junk"
+    ],
+    "Condition": [
+        "1-5;Not Null",
+        "18-65;Not Null",
+        "IF Q1 IN (1,2) THEN ANSWERED ELSE BLANK;1-5",
+        "Q7_1 to Q7_5;1-5",
+        "Q12r1 to Q12r5;1-5",
+        "IF Q3 IN (1) THEN ANSWERED ELSE BLANK;At least one selected",
+        "IF Q5 IN (1) THEN ANSWERED ELSE BLANK;MinLen=3"
+    ]
+})
+
+rule_buf = BytesIO()
+with pd.ExcelWriter(rule_buf, engine="openpyxl") as writer:
+    template_df.to_excel(writer, index=False, sheet_name="Validation_Rules")
+
+st.download_button(
+    label="📥 Download Validation Rules Template",
+    data=rule_buf.getvalue(),
+    file_name="Validation_Rules_Template.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+# --------------------------------------------------
 # Upload Section
 # --------------------------------------------------
+st.divider()
 st.subheader("📤 Upload Files")
 
 raw_file = st.file_uploader("Upload Raw Data (CSV / XLSX)", type=["csv", "xlsx"])
-rules_file = st.file_uploader("Upload Validation Rules (XLSX)", type=["xlsx"])
+rules_file = st.file_uploader("Upload Filled Validation Rules (XLSX)", type=["xlsx"])
 
 # --------------------------------------------------
 # Validation Logic
@@ -62,6 +109,7 @@ if raw_file and rules_file:
                 cond, action = condition.upper().split("THEN")
                 trigger = cond.replace("IF", "").strip()
                 base_q, values = trigger.split("IN")
+
                 base_q = base_q.strip()
                 values = [int(v) for v in values.replace("(", "").replace(")", "").split(",")]
 
@@ -136,7 +184,7 @@ if raw_file and rules_file:
                 })
 
         # --------------------------
-        # OE Junk
+        # Open-end Junk
         # --------------------------
         if "OpenEnd_Junk" in check_types and question in df.columns:
             min_len = 3
@@ -149,6 +197,7 @@ if raw_file and rules_file:
             for i, row in df.iterrows():
                 if not expected_answered[i]:
                     continue
+
                 val = row.get(question)
                 if pd.isna(val):
                     continue
@@ -163,7 +212,7 @@ if raw_file and rules_file:
                     highlight_cells.append((i, question, "oe"))
 
     # --------------------------------------------------
-    # Create reports
+    # Reports
     # --------------------------------------------------
     failed_df = pd.DataFrame(failed_rows)
 
