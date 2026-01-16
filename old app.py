@@ -11,7 +11,7 @@ st.set_page_config(page_title="Survey Validation Engine", layout="wide")
 st.title("📊 Survey Validation Rules & Report Generator")
 
 # --------------------------------------------------
-# DOWNLOAD VALIDATION RULE TEMPLATE (BACK + UPDATED)
+# DOWNLOAD VALIDATION RULE TEMPLATE
 # --------------------------------------------------
 st.subheader("⬇ Download Validation Rules Template")
 
@@ -170,13 +170,24 @@ if raw_file and rules_file:
                 })
 
         # --------------------------
-        # Multi-select
+        # Multi-select (FINAL FIX)
         # --------------------------
         if "Multi-Select" in check_types and grid_cols:
-            mask = expected_answered & (~(df[grid_cols] == 1).any(axis=1))
+
+            selected_mask = (
+                df[grid_cols]
+                .astype(str)
+                .apply(lambda x: x.str.strip())
+                .eq("1")
+                .any(axis=1)
+            )
+
+            mask = expected_answered & (~selected_mask)
+
             for i in df[mask].index:
                 for col in grid_cols:
                     highlight_cells.append((i, col, "multiselect"))
+
                 failed_rows.append({
                     "RespID": df.loc[i, resp_id_col],
                     "Question": question,
