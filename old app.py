@@ -19,7 +19,8 @@ template_df = pd.DataFrame({
         "Q1",
         "AGE",
         "Q5",
-        "Q9_",
+        "Q7_",
+        "Q12r",
         "Q2_",
         "OE1"
     ],
@@ -27,7 +28,8 @@ template_df = pd.DataFrame({
         "Range;Missing",
         "Range;Missing",
         "Skip;Range",
-        "Straightliner",
+        "Straightliner;Range",
+        "Straightliner;Range",
         "Skip;Multi-Select",
         "Skip;OpenEnd_Junk"
     ],
@@ -35,7 +37,8 @@ template_df = pd.DataFrame({
         "1-5;Not Null",
         "18-65;Not Null",
         "IF Q1 IN (1,2) THEN ANSWERED ELSE BLANK;1-5",
-        "Q9_r1 to Q9_r9",
+        "Q7_1 to Q7_5;1-5",
+        "Q12r1 to Q12r5;1-5",
         "IF Q3 IN (1) THEN ANSWERED ELSE BLANK;At least one selected",
         "IF Q5 IN (1) THEN ANSWERED ELSE BLANK;MinLen=3"
     ]
@@ -66,7 +69,6 @@ rules_file = st.file_uploader("Upload Filled Validation Rules (XLSX)", type=["xl
 # --------------------------------------------------
 if raw_file and rules_file:
 
-    # Read data
     if raw_file.name.endswith(".csv"):
         df = pd.read_csv(raw_file, low_memory=False)
     else:
@@ -76,7 +78,6 @@ if raw_file and rules_file:
 
     st.success("Files uploaded successfully")
 
-    # Respondent ID = FIRST COLUMN
     resp_id_col = df.columns[0]
     respondent_base = df[resp_id_col].nunique()
 
@@ -92,7 +93,11 @@ if raw_file and rules_file:
         condition = str(rule["Condition"])
         condition_parts = [c.strip() for c in condition.split(";")]
 
-        if question not in df.columns and "_" not in question:
+        # Detect grid columns via prefix
+        grid_cols = [c for c in df.columns if c.startswith(question)]
+        is_grid = len(grid_cols) > 1
+
+        if not grid_cols and question not in df.columns:
             continue
 
         # --------------------------------------------------
@@ -119,65 +124,68 @@ if raw_file and rules_file:
                 pass
 
         # --------------------------------------------------
-        # RANGE
+        # RANGE (GRID-SAFE)
         # --------------------------------------------------
-        if "Range" in check_types and question in df.columns:
+        if "Range" in check_types:
             range_part = next((c for c in condition_parts if "-" in c), None)
             if range_part:
                 min_v, max_v = map(float, range_part.split("-"))
-                mask = expected_answered & df[question].notna() & ~df[question].between(min_v, max_v)
+                target_cols = grid_cols if is_grid else [question]
+
+                for col in target_cols:
+                    mask = (
+                        expected_answered &
+                        df[col].notna() &
+                        ~df[col].between(min_v, max_v)
+                    )
+                    for _, row in df[mask].iterrows():
+                        failed_rows.append({
+                            "RespID": row[resp_id_col],
+                            "Question": question,
+                            "Issue": f"{col} out of range ({min_v}-{max_v})"
+                        })
+
+        # --------------------------------------------------
+        # MISSING (GRID-SAFE)
+        # --------------------------------------------------
+        if "Missing" in check_types:
+            target_cols = grid_cols if is_grid else [question]
+
+            for col in target_cols:
+                mask = expected_answered & df[col].isna()
                 for _, row in df[mask].iterrows():
                     failed_rows.append({
                         "RespID": row[resp_id_col],
                         "Question": question,
-                        "Issue": f"Out of range ({min_v}-{max_v})"
+                        "Issue": f"{col} missing"
                     })
 
         # --------------------------------------------------
-        # MISSING
+        # STRAIGHTLINER (GRID)
         # --------------------------------------------------
-        if "Missing" in check_types and question in df.columns:
-            mask = expected_answered & df[question].isna()
+        if "Straightliner" in check_types and grid_cols:
+            mask = expected_answered & (df[grid_cols].nunique(axis=1) == 1)
             for _, row in df[mask].iterrows():
                 failed_rows.append({
                     "RespID": row[resp_id_col],
                     "Question": question,
-                    "Issue": "Missing value"
+                    "Issue": "Straightliner detected"
                 })
-
-        # --------------------------------------------------
-        # STRAIGHTLINER
-        # --------------------------------------------------
-        if "Straightliner" in check_types:
-            try:
-                start, end = condition.replace(" ", "").split("to")
-                cols = df.loc[:, start:end]
-                mask = expected_answered & (cols.nunique(axis=1) == 1)
-                for _, row in df[mask].iterrows():
-                    failed_rows.append({
-                        "RespID": row[resp_id_col],
-                        "Question": question,
-                        "Issue": "Straightliner detected"
-                    })
-            except:
-                pass
 
         # --------------------------------------------------
         # MULTI-SELECT
         # --------------------------------------------------
-        if "Multi-Select" in check_types:
-            cols = [c for c in df.columns if c.startswith(question)]
-            if cols:
-                mask = expected_answered & (df[cols].fillna(0).sum(axis=1) == 0)
-                for _, row in df[mask].iterrows():
-                    failed_rows.append({
-                        "RespID": row[resp_id_col],
-                        "Question": question,
-                        "Issue": "No option selected"
-                    })
+        if "Multi-Select" in check_types and grid_cols:
+            mask = expected_answered & (df[grid_cols].fillna(0).sum(axis=1) == 0)
+            for _, row in df[mask].iterrows():
+                failed_rows.append({
+                    "RespID": row[resp_id_col],
+                    "Question": question,
+                    "Issue": "No option selected"
+                })
 
         # --------------------------------------------------
-        # OPEN-END JUNK (NEW)
+        # OPEN-END JUNK
         # --------------------------------------------------
         if "OpenEnd_Junk" in check_types and question in df.columns:
             min_len = 3
@@ -185,19 +193,17 @@ if raw_file and rules_file:
                 if c.upper().startswith("MINLEN"):
                     min_len = int(c.split("=")[1])
 
-            junk_words = {"asdf", "test", "xxx", "na", "n/a", "none", "nothing", "dont know"}
+            junk_words = {"asdf", "test", "xxx", "na", "n/a", "none", "nothing"}
 
             for idx, row in df.iterrows():
                 if not expected_answered.loc[idx]:
                     continue
 
                 val = row.get(question)
-
                 if pd.isna(val):
                     continue
 
                 text = str(val).strip().lower()
-
                 if (
                     len(text) < min_len or
                     text in junk_words or
@@ -220,13 +226,12 @@ if raw_file and rules_file:
             .agg(Failed_Count=("RespID", "count"))
             .reset_index()
         )
-        summary_df["% Failed"] = (summary_df["Failed_Count"] / respondent_base * 100).round(2)
+        summary_df["% Failed"] = (
+            summary_df["Failed_Count"] / respondent_base * 100
+        ).round(2)
     else:
         summary_df = pd.DataFrame()
 
-    # --------------------------------------------------
-    # DOWNLOAD
-    # --------------------------------------------------
     out = BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
         failed_df.to_excel(writer, index=False, sheet_name="Failed_Checks")
