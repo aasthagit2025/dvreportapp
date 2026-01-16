@@ -173,7 +173,7 @@ if raw_file and rules_file:
         # Multi-select
         # --------------------------
         if "Multi-Select" in check_types and grid_cols:
-            mask = expected_answered & (df[grid_cols].fillna(0).sum(axis=1) == 0)
+            mask = expected_answered & (~(df[grid_cols] == 1).any(axis=1))
             for i in df[mask].index:
                 for col in grid_cols:
                     highlight_cells.append((i, col, "multiselect"))
