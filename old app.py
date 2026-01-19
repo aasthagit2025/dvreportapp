@@ -11,12 +11,53 @@ st.set_page_config(page_title="Survey Validation Engine", layout="wide")
 st.title("📊 Survey Validation Rules & Report Generator")
 
 # --------------------------------------------------
+# DOWNLOAD VALIDATION RULE TEMPLATE
+# --------------------------------------------------
+st.subheader("⬇ Download Validation Rules Template")
+
+template_df = pd.DataFrame({
+    "Question": [
+        "Q1",
+        "AGE",
+        "qAP12r",
+        "Q7_",
+        "OE1"
+    ],
+    "Check_Type": [
+        "Range;Missing",
+        "Range;Missing",
+        "Skip;Multi-Select",
+        "Straightliner;Range",
+        "Skip;OpenEnd_Junk"
+    ],
+    "Condition": [
+        "1-5;Not Null",
+        "18-65;Not Null",
+        "IF hAGE IN (2) THEN ANSWERED ELSE BLANK;At least one selected",
+        "Q7_1 to Q7_5;1-5",
+        "IF Q5 IN (1) THEN ANSWERED ELSE BLANK;MinLen=3"
+    ]
+})
+
+rule_buf = BytesIO()
+with pd.ExcelWriter(rule_buf, engine="openpyxl") as writer:
+    template_df.to_excel(writer, index=False, sheet_name="Validation_Rules")
+
+st.download_button(
+    label="📥 Download Validation Rules Template",
+    data=rule_buf.getvalue(),
+    file_name="Validation_Rules_Template.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+# --------------------------------------------------
 # Upload Section
 # --------------------------------------------------
+st.divider()
 st.subheader("📤 Upload Files")
 
 raw_file = st.file_uploader("Upload Raw Data (CSV / XLSX)", type=["csv", "xlsx"])
-rules_file = st.file_uploader("Upload Validation Rules (XLSX)", type=["xlsx"])
+rules_file = st.file_uploader("Upload Filled Validation Rules (XLSX)", type=["xlsx"])
 
 # --------------------------------------------------
 # Main Logic
@@ -46,7 +87,7 @@ if raw_file and rules_file:
     highlight_cells = []
 
     # --------------------------------------------------
-    # Apply rules one by one
+    # Apply rules
     # --------------------------------------------------
     for _, rule in rules_df.iterrows():
 
@@ -55,7 +96,6 @@ if raw_file and rules_file:
         condition = str(rule["Condition"])
         condition_parts = [c.strip() for c in condition.split(";")]
 
-        # Identify grid columns using prefix
         grid_cols = [c for c in df.columns if c.startswith(question)]
         is_grid = len(grid_cols) > 1
 
@@ -63,7 +103,7 @@ if raw_file and rules_file:
             continue
 
         # ==================================================
-        # 1️⃣ SKIP GATING (NUMERIC-SAFE)
+        # 1️⃣ SKIP GATING (NUMERIC SAFE)
         # ==================================================
         expected_answered = pd.Series(True, index=df.index)
 
@@ -116,7 +156,7 @@ if raw_file and rules_file:
                         })
 
         # ==================================================
-        # 3️⃣ RANGE CHECK (SINGLE + GRID)
+        # 3️⃣ RANGE CHECK
         # ==================================================
         if "Range" in check_types:
             range_part = next((c for c in condition_parts if "-" in c), None)
@@ -125,11 +165,7 @@ if raw_file and rules_file:
                 targets = grid_cols if is_grid else [question]
 
                 for col in targets:
-                    mask = (
-                        expected_answered &
-                        df[col].notna() &
-                        ~df[col].between(min_v, max_v)
-                    )
+                    mask = expected_answered & df[col].notna() & ~df[col].between(min_v, max_v)
                     for i in df[mask].index:
                         highlight_cells.append((i, col, "range"))
                         failed_rows.append({
@@ -154,7 +190,7 @@ if raw_file and rules_file:
                     })
 
         # ==================================================
-        # 5️⃣ STRAIGHTLINER (GRID ONLY)
+        # 5️⃣ STRAIGHTLINER
         # ==================================================
         if "Straightliner" in check_types and grid_cols:
             mask = expected_answered & (df[grid_cols].nunique(axis=1) == 1)
@@ -168,7 +204,7 @@ if raw_file and rules_file:
                 })
 
         # ==================================================
-        # 6️⃣ MULTI-SELECT (CODE-IN-CELL – YOUR DATA)
+        # 6️⃣ MULTI-SELECT (CODE-IN-CELL)
         # ==================================================
         if "Multi-Select" in check_types and grid_cols:
             selected_mask = df[grid_cols].notna().any(axis=1)
@@ -202,11 +238,7 @@ if raw_file and rules_file:
                     continue
 
                 text = str(val).strip().lower()
-                if (
-                    len(text) < min_len or
-                    text in junk_words or
-                    re.fullmatch(r"(.)\1{3,}", text)
-                ):
+                if len(text) < min_len or text in junk_words or re.fullmatch(r"(.)\1{3,}", text):
                     highlight_cells.append((i, question, "oe"))
                     failed_rows.append({
                         "RespID": row[resp_id_col],
@@ -224,9 +256,7 @@ if raw_file and rules_file:
         .size()
         .reset_index(name="Failed_Count")
     )
-    summary_df["% Failed"] = (
-        summary_df["Failed_Count"] / respondent_base * 100
-    ).round(2)
+    summary_df["% Failed"] = (summary_df["Failed_Count"] / respondent_base * 100).round(2)
 
     # --------------------------------------------------
     # Write Excel with highlighting
