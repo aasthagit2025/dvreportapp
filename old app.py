@@ -140,6 +140,24 @@ if raw_file and rules_file:
                         expected_answered.loc[i] = "BLANK" in after_then
             except Exception as e:
                 pass
+            # --------------------------
+# Skip VIOLATION reporting (NEW)
+# --------------------------
+if "Skip" in check_types and grid_cols:
+
+    for i in df.index:
+        if not expected_answered.loc[i]:
+            # Should be BLANK, but data exists
+            if df.loc[i, grid_cols].notna().any():
+                for col in grid_cols:
+                    highlight_cells.append((i, col, "skip"))
+
+                failed_rows.append({
+                    "RespID": df.loc[i, resp_id_col],
+                    "Question": question,
+                    "Issue": "Skip violation: should be blank"
+                })
+
 
         # --------------------------
         # Range
