@@ -115,7 +115,7 @@ if raw_file and rules_file:
                 if base_q_raw not in col_map:
                    continue  # invalid skip rule → ignore safely
 
-                 base_q = col_map[base_q_raw] 
+                base_q = col_map[base_q_raw] 
 
                 values = [v.strip() for v in values.replace("(", "").replace(")", "").split(",")]
 
