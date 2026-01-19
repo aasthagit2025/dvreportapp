@@ -107,21 +107,26 @@ if raw_file and rules_file:
         if "Skip" in check_types:
             try:
                 cond, action = condition.upper().split("THEN")
+                # Auto-add ELSE BLANK if missing
+                if "ELSE" not in action:
+                    action = action.strip() + " ELSE BLANK"
                 trigger = cond.replace("IF", "").strip()
-                base_q, values = trigger.split("IN")
-
                 base_q_raw, values = trigger.split("IN")
+
+             
                 base_q_raw = base_q_raw.strip().lower()
+                # map rule variable to actual data column 
                 if base_q_raw not in col_map:
                    continue  # invalid skip rule → ignore safely
 
                 base_q = col_map[base_q_raw] 
 
-                values = [v.strip() for v in values.replace("(", "").replace(")", "").split(",")]
+                values = [v.strip() for v in values.replace("(", "").replace(")", "").split(",")].spl
 
                 for i, row in df.iterrows():
                     base_val = str(row.get(base_q)).strip()
-                    if row.get(base_q) in values:
+                    
+                    if base_val in values:
                         expected_answered.loc[i] = "ANSWERED" in action
                     else:
                         expected_answered.loc[i] = "BLANK" not in action
