@@ -110,15 +110,22 @@ if raw_file and rules_file:
                 trigger = cond.replace("IF", "").strip()
                 base_q, values = trigger.split("IN")
 
-                base_q = base_q.strip()
-                values = [int(v) for v in values.replace("(", "").replace(")", "").split(",")]
+                base_q_raw, values = trigger.split("IN")
+                base_q_raw = base_q_raw.strip().lower()
+                if base_q_raw not in col_map:
+                   continue  # invalid skip rule → ignore safely
+
+                 base_q = col_map[base_q_raw] 
+
+                values = [v.strip() for v in values.replace("(", "").replace(")", "").split(",")]
 
                 for i, row in df.iterrows():
+                    base_val = str(row.get(base_q)).strip()
                     if row.get(base_q) in values:
-                        expected_answered[i] = "ANSWERED" in action
+                        expected_answered.loc[i] = "ANSWERED" in action
                     else:
-                        expected_answered[i] = "BLANK" not in action
-            except:
+                        expected_answered.loc[i] = "BLANK" not in action
+            except Exception:
                 pass
 
         # --------------------------
