@@ -106,11 +106,14 @@ if raw_file and rules_file:
 
         if "Skip" in check_types:
             try:
-                cond, action = condition.upper().split("THEN")
-                # Auto-add ELSE BLANK if missing
-                if "ELSE" not in action:
-                    action = action.strip() + " ELSE BLANK"
-                trigger = cond.replace("IF", "").strip()
+                condition_u = condition.upper()
+                
+                 # Ensure ELSE BLANK exists
+                
+                
+                if "ELSE" not in condition_u:
+                    condition_u = condition_u + " ELSE BLANK"
+                trigger = before_then.replace("IF", "").strip()
                 base_q_raw, values = trigger.split("IN")
 
              
@@ -121,16 +124,21 @@ if raw_file and rules_file:
 
                 base_q = col_map[base_q_raw] 
 
-                values = [v.strip() for v in values.replace("(", "").replace(")", "").split(",")].spl
+                values = [float(v.strip()) for v in values.replace("(", "").replace(")", "").split(",")]
 
                 for i, row in df.iterrows():
-                    base_val = str(row.get(base_q)).strip()
+                    base_val = row.get(base_q)
                     
-                    if base_val in values:
-                        expected_answered.loc[i] = "ANSWERED" in action
+                    if pd.isna(base_val):
+                        expected_answered.loc[i] = False
+                        continue
+                    base_val = float(base_val)
+
+                    if base_val in values:     
+                        expected_answered.loc[i] = "ANSWERED" in after_then
                     else:
-                        expected_answered.loc[i] = "BLANK" not in action
-            except Exception:
+                        expected_answered.loc[i] = "BLANK" in after_then
+            except Exception as e:
                 pass
 
         # --------------------------
