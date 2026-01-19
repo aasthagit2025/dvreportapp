@@ -140,7 +140,7 @@ if raw_file and rules_file:
                         expected_answered.loc[i] = "BLANK" in after_then
             except Exception as e:
                 pass
-            # --------------------------
+# --------------------------
 # Skip VIOLATION reporting (NEW)
 # --------------------------
 if "Skip" in check_types and grid_cols:
