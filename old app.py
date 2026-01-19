@@ -11,65 +11,21 @@ st.set_page_config(page_title="Survey Validation Engine", layout="wide")
 st.title("📊 Survey Validation Rules & Report Generator")
 
 # --------------------------------------------------
-# DOWNLOAD VALIDATION RULE TEMPLATE
-# --------------------------------------------------
-st.subheader("⬇ Download Validation Rules Template")
-
-template_df = pd.DataFrame({
-    "Question": [
-        "Q1",
-        "AGE",
-        "Q5",
-        "Q7_",
-        "Q12r",
-        "Q2_",
-        "OE1"
-    ],
-    "Check_Type": [
-        "Range;Missing",
-        "Range;Missing",
-        "Skip;Range",
-        "Straightliner;Range",
-        "Straightliner;Range",
-        "Skip;Multi-Select",
-        "Skip;OpenEnd_Junk"
-    ],
-    "Condition": [
-        "1-5;Not Null",
-        "18-65;Not Null",
-        "IF Q1 IN (1,2) THEN ANSWERED ELSE BLANK;1-5",
-        "Q7_1 to Q7_5;1-5",
-        "Q12r1 to Q12r5;1-5",
-        "IF Q3 IN (1) THEN ANSWERED ELSE BLANK;At least one selected",
-        "IF Q5 IN (1) THEN ANSWERED ELSE BLANK;MinLen=3"
-    ]
-})
-
-rule_buf = BytesIO()
-with pd.ExcelWriter(rule_buf, engine="openpyxl") as writer:
-    template_df.to_excel(writer, index=False, sheet_name="Validation_Rules")
-
-st.download_button(
-    label="📥 Download Validation Rules Template",
-    data=rule_buf.getvalue(),
-    file_name="Validation_Rules_Template.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-
-# --------------------------------------------------
 # Upload Section
 # --------------------------------------------------
-st.divider()
 st.subheader("📤 Upload Files")
 
 raw_file = st.file_uploader("Upload Raw Data (CSV / XLSX)", type=["csv", "xlsx"])
-rules_file = st.file_uploader("Upload Filled Validation Rules (XLSX)", type=["xlsx"])
+rules_file = st.file_uploader("Upload Validation Rules (XLSX)", type=["xlsx"])
 
 # --------------------------------------------------
-# Validation Logic
+# Main Logic
 # --------------------------------------------------
 if raw_file and rules_file:
 
+    # --------------------------
+    # Read data
+    # --------------------------
     if raw_file.name.endswith(".csv"):
         df = pd.read_csv(raw_file, low_memory=False)
     else:
@@ -77,14 +33,20 @@ if raw_file and rules_file:
 
     rules_df = pd.read_excel(rules_file)
 
+    # --------------------------
+    # Normalize columns
+    # --------------------------
+    df.columns = df.columns.str.strip()
+    col_map = {c.lower(): c for c in df.columns}
+
     resp_id_col = df.columns[0]
     respondent_base = df[resp_id_col].nunique()
 
     failed_rows = []
-    highlight_cells = []  # (row_idx, col_name, error_type)
+    highlight_cells = []
 
     # --------------------------------------------------
-    # Apply Rules
+    # Apply rules one by one
     # --------------------------------------------------
     for _, rule in rules_df.iterrows():
 
@@ -93,57 +55,69 @@ if raw_file and rules_file:
         condition = str(rule["Condition"])
         condition_parts = [c.strip() for c in condition.split(";")]
 
+        # Identify grid columns using prefix
         grid_cols = [c for c in df.columns if c.startswith(question)]
         is_grid = len(grid_cols) > 1
 
         if not grid_cols and question not in df.columns:
             continue
 
-        # --------------------------
-        # Skip gating
-        # --------------------------
+        # ==================================================
+        # 1️⃣ SKIP GATING (NUMERIC-SAFE)
+        # ==================================================
         expected_answered = pd.Series(True, index=df.index)
 
         if "Skip" in check_types:
             try:
-                condition_u = condition.upper()
-                
-                 # Ensure ELSE BLANK exists
-                
-                
-                if "ELSE" not in condition_u:
-                    condition_u = condition_u + " ELSE BLANK"
-                trigger = before_then.replace("IF", "").strip()
-                base_q_raw, values = trigger.split("IN")
+                cond_part, then_part = condition.upper().split("THEN", 1)
+                if "ELSE" not in then_part:
+                    then_part += " ELSE BLANK"
 
-             
+                trigger = cond_part.replace("IF", "").strip()
+                base_q_raw, values_raw = trigger.split("IN", 1)
                 base_q_raw = base_q_raw.strip().lower()
-                # map rule variable to actual data column 
+
                 if base_q_raw not in col_map:
-                   continue  # invalid skip rule → ignore safely
+                    continue
 
-                base_q = col_map[base_q_raw] 
-
-                values = [float(v.strip()) for v in values.replace("(", "").replace(")", "").split(",")]
+                base_q = col_map[base_q_raw]
+                values = [
+                    float(v.strip())
+                    for v in values_raw.replace("(", "").replace(")", "").split(",")
+                ]
 
                 for i, row in df.iterrows():
                     base_val = row.get(base_q)
-                    
                     if pd.isna(base_val):
                         expected_answered.loc[i] = False
                         continue
-                    base_val = float(base_val)
 
-                    if base_val in values:     
-                        expected_answered.loc[i] = "ANSWERED" in after_then
+                    base_val = float(base_val)
+                    if base_val in values:
+                        expected_answered.loc[i] = "ANSWERED" in then_part
                     else:
-                        expected_answered.loc[i] = "BLANK" in after_then
-            except Exception as e:
+                        expected_answered.loc[i] = "BLANK" in then_part
+            except:
                 pass
 
-        # --------------------------
-        # Range
-        # --------------------------
+        # ==================================================
+        # 2️⃣ SKIP VIOLATION REPORTING
+        # ==================================================
+        if "Skip" in check_types and grid_cols:
+            for i in df.index:
+                if not expected_answered.loc[i]:
+                    if df.loc[i, grid_cols].notna().any():
+                        for col in grid_cols:
+                            highlight_cells.append((i, col, "skip"))
+                        failed_rows.append({
+                            "RespID": df.loc[i, resp_id_col],
+                            "Question": question,
+                            "Issue": "Skip violation: should be blank"
+                        })
+
+        # ==================================================
+        # 3️⃣ RANGE CHECK (SINGLE + GRID)
+        # ==================================================
         if "Range" in check_types:
             range_part = next((c for c in condition_parts if "-" in c), None)
             if range_part:
@@ -151,33 +125,37 @@ if raw_file and rules_file:
                 targets = grid_cols if is_grid else [question]
 
                 for col in targets:
-                    mask = expected_answered & df[col].notna() & ~df[col].between(min_v, max_v)
+                    mask = (
+                        expected_answered &
+                        df[col].notna() &
+                        ~df[col].between(min_v, max_v)
+                    )
                     for i in df[mask].index:
+                        highlight_cells.append((i, col, "range"))
                         failed_rows.append({
                             "RespID": df.loc[i, resp_id_col],
                             "Question": question,
                             "Issue": f"{col} out of range ({min_v}-{max_v})"
                         })
-                        highlight_cells.append((i, col, "range"))
 
-        # --------------------------
-        # Missing
-        # --------------------------
+        # ==================================================
+        # 4️⃣ MISSING CHECK
+        # ==================================================
         if "Missing" in check_types:
             targets = grid_cols if is_grid else [question]
             for col in targets:
                 mask = expected_answered & df[col].isna()
                 for i in df[mask].index:
+                    highlight_cells.append((i, col, "missing"))
                     failed_rows.append({
                         "RespID": df.loc[i, resp_id_col],
                         "Question": question,
                         "Issue": f"{col} missing"
                     })
-                    highlight_cells.append((i, col, "missing"))
 
-        # --------------------------
-        # Straightliner
-        # --------------------------
+        # ==================================================
+        # 5️⃣ STRAIGHTLINER (GRID ONLY)
+        # ==================================================
         if "Straightliner" in check_types and grid_cols:
             mask = expected_answered & (df[grid_cols].nunique(axis=1) == 1)
             for i in df[mask].index:
@@ -189,51 +167,52 @@ if raw_file and rules_file:
                     "Issue": "Straightliner detected"
                 })
 
-        # --------------------------
-        # Multi-select (FINAL FIX)
-        # --------------------------
+        # ==================================================
+        # 6️⃣ MULTI-SELECT (CODE-IN-CELL – YOUR DATA)
+        # ==================================================
         if "Multi-Select" in check_types and grid_cols:
-      
-            selected_mask = df[grid_cols].notna().any(axis=1) 
+            selected_mask = df[grid_cols].notna().any(axis=1)
             mask = expected_answered & (~selected_mask)
 
             for i in df[mask].index:
                 for col in grid_cols:
                     highlight_cells.append((i, col, "multiselect"))
-
                 failed_rows.append({
                     "RespID": df.loc[i, resp_id_col],
                     "Question": question,
                     "Issue": "No option selected"
                 })
 
-        # --------------------------
-        # Open-end Junk
-        # --------------------------
+        # ==================================================
+        # 7️⃣ OPEN-END JUNK
+        # ==================================================
         if "OpenEnd_Junk" in check_types and question in df.columns:
             min_len = 3
             for c in condition_parts:
                 if c.upper().startswith("MINLEN"):
                     min_len = int(c.split("=")[1])
 
-            junk_words = {"asdf", "test", "xxx", "na", "none"}
+            junk_words = {"asdf", "test", "xxx", "na", "none", "dont know"}
 
             for i, row in df.iterrows():
-                if not expected_answered[i]:
+                if not expected_answered.loc[i]:
                     continue
-
                 val = row.get(question)
                 if pd.isna(val):
                     continue
 
                 text = str(val).strip().lower()
-                if len(text) < min_len or text in junk_words or re.fullmatch(r"(.)\1{3,}", text):
+                if (
+                    len(text) < min_len or
+                    text in junk_words or
+                    re.fullmatch(r"(.)\1{3,}", text)
+                ):
+                    highlight_cells.append((i, question, "oe"))
                     failed_rows.append({
                         "RespID": row[resp_id_col],
                         "Question": question,
                         "Issue": "Open-end junk text"
                     })
-                    highlight_cells.append((i, question, "oe"))
 
     # --------------------------------------------------
     # Reports
@@ -245,7 +224,9 @@ if raw_file and rules_file:
         .size()
         .reset_index(name="Failed_Count")
     )
-    summary_df["% Failed"] = (summary_df["Failed_Count"] / respondent_base * 100).round(2)
+    summary_df["% Failed"] = (
+        summary_df["Failed_Count"] / respondent_base * 100
+    ).round(2)
 
     # --------------------------------------------------
     # Write Excel with highlighting
@@ -264,12 +245,13 @@ if raw_file and rules_file:
             "missing": PatternFill("solid", fgColor="FFFF99"),
             "straightliner": PatternFill("solid", fgColor="FFCCCC"),
             "multiselect": PatternFill("solid", fgColor="99CCFF"),
-            "oe": PatternFill("solid", fgColor="CCCCCC")
+            "skip": PatternFill("solid", fgColor="FFCC99"),
+            "oe": PatternFill("solid", fgColor="CCCCCC"),
         }
 
-        for row_idx, col_name, err in highlight_cells:
-            col_idx = df.columns.get_loc(col_name) + 1
-            ws.cell(row=row_idx + 2, column=col_idx).fill = fills[err]
+        for r, c, err in highlight_cells:
+            col_idx = df.columns.get_loc(c) + 1
+            ws.cell(row=r + 2, column=col_idx).fill = fills[err]
 
     st.download_button(
         "📥 Download Validation Report",
