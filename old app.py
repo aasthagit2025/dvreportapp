@@ -173,15 +173,8 @@ if raw_file and rules_file:
         # Multi-select (FINAL FIX)
         # --------------------------
         if "Multi-Select" in check_types and grid_cols:
-
-            selected_mask = (
-                df[grid_cols]
-                .astype(str)
-                .apply(lambda x: x.str.strip())
-                .eq("1")
-                .any(axis=1)
-            )
-
+      
+            selected_mask = df[grid_cols].notna().any(axis=1) 
             mask = expected_answered & (~selected_mask)
 
             for i in df[mask].index:
