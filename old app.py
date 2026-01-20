@@ -13,8 +13,7 @@ st.title("📊 Survey Validation Rules & Report Generator")
 # --------------------------------------------------
 # DOWNLOAD VALIDATION RULE TEMPLATE
 # --------------------------------------------------
-st.subheader("⬇ Download Validation
- Rules Template")
+st.subheader("⬇ Download Validation Rules Template")
 
 template_df = pd.DataFrame({
     "Question": [
