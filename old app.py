@@ -275,6 +275,9 @@ if raw_file and rules_file:
     # Reports
     # --------------------------------------------------
     failed_df = pd.DataFrame(failed_rows)
+    
+    if failed_df.empty:
+    summary_df = pd.DataFrame(columns=["Question", "Failed_Count", "% Failed"]) 
 
     summary_df = (
         failed_df.groupby("Question")
