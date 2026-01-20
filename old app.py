@@ -197,7 +197,7 @@ if raw_file and rules_file:
                 if grid_cols: 
                    mask = expected_answered & df[col].isna()
                 else:
-                    mask = df[col].isna(  
+                    mask = df[col].isna()
                 for i in df[mask].index:
                     highlight_cells.append((i, col, "missing"))
                     failed_rows.append({
