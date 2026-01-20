@@ -61,7 +61,22 @@ st.divider()
 st.subheader("Upload Files")
 
 raw_file = st.file_uploader("Upload Raw Data (CSV / XLSX)", type=["csv", "xlsx"])
+df = pd.read_excel(raw_file)
 rules_file = st.file_uploader("Upload Validation Rules (XLSX)", type=["xlsx"])
+# --------------------------------------------------
+# Normalize numeric-looking columns (CRITICAL FIX)
+# --------------------------------------------------
+for col in df.columns:
+    if col == resp_id_col:
+        continue
+    df[col] = (
+        df[col]
+        .astype(str)
+        .str.strip()
+        .replace({"": None, "nan": None})
+    )
+    df[col] = pd.to_numeric(df[col], errors="ignore")
+
 
 # --------------------------------------------------
 # Main Logic
@@ -312,7 +327,7 @@ if raw_file and rules_file:
             ws.cell(row=r + 2, column=col_idx).fill = fills[err]
 
     st.download_button(
-        "Download Validation Report",
+        "📥 Download Validation Report",
         out.getvalue(),
         file_name="Validation_Report.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
