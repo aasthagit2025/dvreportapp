@@ -66,6 +66,7 @@ rules_file = st.file_uploader("Upload Validation Rules (XLSX)", type=["xlsx"])
 # --------------------------------------------------
 # Normalize numeric-looking columns (CRITICAL FIX)
 # --------------------------------------------------
+resp_id_col = df.columns[0]
 for col in df.columns:
     if col == resp_id_col:
         continue
