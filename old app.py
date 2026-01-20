@@ -168,11 +168,19 @@ if raw_file and rules_file:
             range_part = next((c for c in condition_parts if "-" in c), None)
             if range_part:
                 min_v, max_v = map(float, range_part.split("-"))
+
+                if not grid_cols:
+                   col = question
+                   mask = df[col].notna() & ~df[col].between(min_v, max_v)
+                else:  
+                     mask = expected_answered & df[grid_cols].notna().any(axis=1)     
+
                 targets = grid_cols if is_grid else [question]
 
                 for col in targets:
-                    mask = expected_answered & df[col].notna() & ~df[col].between(min_v, max_v)
-                    for i in df[mask].index:
+                    bad = df[col].notna() & ~df[col].between(min_v, max_v)
+                    
+                    for i in df[bad].index:
                         highlight_cells.append((i, col, "range"))
                         failed_rows.append({
                             "RespID": df.loc[i, resp_id_col],
@@ -186,7 +194,10 @@ if raw_file and rules_file:
         if "Missing" in check_types:
             targets = grid_cols if is_grid else [question]
             for col in targets:
-                mask = expected_answered & df[col].isna()
+                if grid_cols: 
+                   mask = expected_answered & df[col].isna()
+                else:
+                    mask = df[col].isna(  
                 for i in df[mask].index:
                     highlight_cells.append((i, col, "missing"))
                     failed_rows.append({
