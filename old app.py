@@ -13,7 +13,8 @@ st.title("📊 Survey Validation Rules & Report Generator")
 # --------------------------------------------------
 # DOWNLOAD VALIDATION RULE TEMPLATE
 # --------------------------------------------------
-st.subheader("⬇ Download Validation Rules Template")
+st.subheader("⬇ Download Validation
+ Rules Template")
 
 template_df = pd.DataFrame({
     "Question": [
@@ -143,11 +144,14 @@ if raw_file and rules_file:
         # ==================================================
         # 2️⃣ SKIP VIOLATION REPORTING
         # ==================================================
-        if "Skip" in check_types and grid_cols:
+        if "Skip" in check_types:
+      
+      targets = grid_cols if grid_cols else [question]
+
             for i in df.index:
                 if not expected_answered.loc[i]:
-                    if df.loc[i, grid_cols].notna().any():
-                        for col in grid_cols:
+                    if df.loc[i, targets].notna().any():
+                        for col in targets:
                             highlight_cells.append((i, col, "skip"))
                         failed_rows.append({
                             "RespID": df.loc[i, resp_id_col],
