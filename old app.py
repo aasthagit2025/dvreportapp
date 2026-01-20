@@ -145,7 +145,7 @@ if raw_file and rules_file:
         # ==================================================
         if "Skip" in check_types:
       
-        targets = grid_cols if grid_cols else [question]
+         targets = grid_cols if grid_cols else [question]
 
           for i in df.index:
                 if not expected_answered.loc[i]:
