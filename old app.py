@@ -11,31 +11,35 @@ st.set_page_config(page_title="Survey Validation Engine", layout="wide")
 st.title("📊 Survey Validation Rules & Report Generator")
 
 # --------------------------------------------------
-# DOWNLOAD VALIDATION RULE TEMPLATE
+# Download Validation Rule Template
 # --------------------------------------------------
 st.subheader("⬇ Download Validation Rules Template")
 
 template_df = pd.DataFrame({
     "Question": [
-        "Q1",
-        "AGE",
-        "qAP12r",
-        "Q7_",
-        "OE1"
+        "Q1", "Q4_r1", "Q4a", "Q9_", "Q11_", "Q2_", "Q3_", "AGE", "OE1"
     ],
     "Check_Type": [
         "Range;Missing",
-        "Range;Missing",
-        "Skip;Multi-Select",
-        "Straightliner;Range",
-        "Skip;OpenEnd_Junk"
+        "Range",
+        "Skip;OpenEnd_Junk",
+        "Straightliner",
+        "Straightliner",
+        "Multi-Select",
+        "Skip",
+        "Range",
+        "OpenEnd_Junk"
     ],
     "Condition": [
         "1-5;Not Null",
-        "18-65;Not Null",
-        "IF hAGE IN (2) THEN ANSWERED ELSE BLANK;At least one selected",
-        "Q7_1 to Q7_5;1-5",
-        "IF Q5 IN (1) THEN ANSWERED ELSE BLANK;MinLen=3"
+        "1-11",
+        "If Q4_r1 IN (10,11) THEN ANSWERED ELSE BLANK;MinLen=3",
+        "Q9_r1 to Q9_r9",
+        "Q11_r1 to Q11_r12",
+        "At least one selected",
+        "If Q2_1=1 THEN ANSWERED ELSE BLANK",
+        "18-65",
+        "Detect junk or AI text"
     ]
 })
 
