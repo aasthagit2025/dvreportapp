@@ -102,25 +102,37 @@ respondent_base = df[resp_id_col].nunique()
 failed_rows = []
 highlight_cells = []
 
-# --------------------------------------------------
-# Apply Rules
-# --------------------------------------------------
-for _, rule in rules_df.iterrows():
+# ==================================================
+# APPLY VALIDATION RULES (FINAL ENGINE)
+# ==================================================
+
+debug_rows = []          # per-rule debug info
+failed_rows = []
+highlight_cells = []
+
+for rule_idx, rule in rules_df.iterrows():
 
     question = str(rule["Question"]).strip()
     check_types = [c.strip() for c in str(rule["Check_Type"]).split(";")]
     condition = str(rule["Condition"])
-    condition_parts = [c.strip() for c in condition.split(";")]
+    cond_parts = [c.strip() for c in condition.split(";")]
 
+    # ------------------------------
+    # Resolve columns
+    # ------------------------------
     grid_cols = [c for c in df.columns if c.startswith(question)]
     is_grid = len(grid_cols) > 1
 
     if not grid_cols and question not in df.columns:
         continue
 
-    expected_answered = pd.Series(True, index=df.index)
+    target_cols = grid_cols if grid_cols else [question]
 
-    # ---------------- Skip gating ----------------
+    # ------------------------------
+    # STEP 1: SKIP BASE CALCULATION
+    # ------------------------------
+    skip_ok = pd.Series(True, index=df.index)
+
     if "Skip" in check_types:
         try:
             cond_part, then_part = condition.upper().split("THEN", 1)
@@ -131,25 +143,31 @@ for _, rule in rules_df.iterrows():
             base_q_raw, values_raw = trigger.split("IN", 1)
             base_q = col_map.get(base_q_raw.strip().lower())
 
-            values = [float(v) for v in values_raw.replace("(", "").replace(")", "").split(",")]
+            values = [
+                float(v.strip())
+                for v in values_raw.replace("(", "").replace(")", "").split(",")
+            ]
 
             for i in df.index:
                 base_val = df.loc[i, base_q]
                 if pd.isna(base_val):
-                    expected_answered.loc[i] = False
+                    skip_ok.loc[i] = False
                 elif float(base_val) in values:
-                    expected_answered.loc[i] = "ANSWERED" in then_part
+                    skip_ok.loc[i] = "ANSWERED" in then_part
                 else:
-                    expected_answered.loc[i] = "BLANK" in then_part
+                    skip_ok.loc[i] = "BLANK" in then_part
         except:
             pass
 
-    # ---------------- Skip violation ----------------
+    skip_violation = ~skip_ok
+
+    # ------------------------------
+    # STEP 2: REPORT SKIP VIOLATIONS
+    # ------------------------------
     if "Skip" in check_types:
-        targets = grid_cols if grid_cols else [question]
         for i in df.index:
-            if not expected_answered.loc[i] and df.loc[i, targets].notna().any():
-                for col in targets:
+            if skip_violation.loc[i] and df.loc[i, target_cols].notna().any():
+                for col in target_cols:
                     highlight_cells.append((i, col, "skip"))
                 failed_rows.append({
                     "RespID": df.loc[i, resp_id_col],
@@ -157,14 +175,19 @@ for _, rule in rules_df.iterrows():
                     "Issue": "Skip violation"
                 })
 
-    # ---------------- Range ----------------
+    # ------------------------------
+    # STEP 3: RANGE (ONLY skip_ok)
+    # ------------------------------
     if "Range" in check_types:
-        rng = next((c for c in condition_parts if "-" in c), None)
+        rng = next((c for c in cond_parts if "-" in c), None)
         if rng:
             lo, hi = map(float, rng.split("-"))
-            targets = grid_cols if is_grid else [question]
-            for col in targets:
-                bad = df[col].notna() & ~df[col].between(lo, hi)
+            for col in target_cols:
+                bad = (
+                    skip_ok
+                    & df[col].notna()
+                    & ~df[col].between(lo, hi)
+                )
                 for i in df[bad].index:
                     highlight_cells.append((i, col, "range"))
                     failed_rows.append({
@@ -173,11 +196,12 @@ for _, rule in rules_df.iterrows():
                         "Issue": f"{col} out of range ({lo}-{hi})"
                     })
 
-    # ---------------- Missing ----------------
+    # ------------------------------
+    # STEP 4: MISSING (ONLY skip_ok)
+    # ------------------------------
     if "Missing" in check_types:
-        targets = grid_cols if is_grid else [question]
-        for col in targets:
-            bad = df[col].isna()
+        for col in target_cols:
+            bad = skip_ok & df[col].isna()
             for i in df[bad].index:
                 highlight_cells.append((i, col, "missing"))
                 failed_rows.append({
@@ -186,9 +210,11 @@ for _, rule in rules_df.iterrows():
                     "Issue": f"{col} missing"
                 })
 
-    # ---------------- Straightliner ----------------
-    if "Straightliner" in check_types and grid_cols:
-        bad = df[grid_cols].nunique(axis=1) == 1
+    # ------------------------------
+    # STEP 5: STRAIGHTLINER (GRID ONLY)
+    # ------------------------------
+    if "Straightliner" in check_types and is_grid:
+        bad = skip_ok & (df[grid_cols].nunique(axis=1) == 1)
         for i in df[bad].index:
             for col in grid_cols:
                 highlight_cells.append((i, col, "straightliner"))
@@ -198,9 +224,11 @@ for _, rule in rules_df.iterrows():
                 "Issue": "Straightliner"
             })
 
-    # ---------------- Multi-select ----------------
-    if "Multi-Select" in check_types and grid_cols:
-        bad = df[grid_cols].notna().sum(axis=1) == 0
+    # ------------------------------
+    # STEP 6: MULTI-SELECT (GRID)
+    # ------------------------------
+    if "Multi-Select" in check_types and is_grid:
+        bad = skip_ok & (df[grid_cols].notna().sum(axis=1) == 0)
         for i in df[bad].index:
             for col in grid_cols:
                 highlight_cells.append((i, col, "multiselect"))
@@ -210,20 +238,41 @@ for _, rule in rules_df.iterrows():
                 "Issue": "No option selected"
             })
 
-    # ---------------- Open-end junk ----------------
+    # ------------------------------
+    # STEP 7: OPEN-END JUNK
+    # ------------------------------
     if "OpenEnd_Junk" in check_types and question in df.columns:
+        min_len = 3
+        for c in cond_parts:
+            if c.upper().startswith("MINLEN"):
+                min_len = int(c.split("=")[1])
+
+        junk_words = {"asdf", "test", "xxx", "na", "none"}
+
         for i in df.index:
+            if not skip_ok.loc[i]:
+                continue
             val = df.loc[i, question]
             if pd.isna(val):
                 continue
-            txt = str(val).lower().strip()
-            if len(txt) < 3 or txt in {"asdf", "test", "xxx", "na"}:
+            txt = str(val).strip().lower()
+            if len(txt) < min_len or txt in junk_words:
                 highlight_cells.append((i, question, "oe"))
                 failed_rows.append({
                     "RespID": df.loc[i, resp_id_col],
                     "Question": question,
                     "Issue": "Open-end junk"
                 })
+
+    # ------------------------------
+    # DEBUG INFO (PER RULE)
+    # ------------------------------
+    debug_rows.append({
+        "Question": question,
+        "Skip_OK_Count": int(skip_ok.sum()),
+        "Skip_Violation_Count": int(skip_violation.sum()),
+        "Total_Rows": len(df)
+    })
 
 # --------------------------------------------------
 # Reports
