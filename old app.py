@@ -277,9 +277,9 @@ if raw_file and rules_file:
     failed_df = pd.DataFrame(failed_rows)
     
     if failed_df.empty:
-    summary_df = pd.DataFrame(columns=["Question", "Failed_Count", "% Failed"]) 
-
-    summary_df = (
+        summary_df = pd.DataFrame(columns=["Question", "Failed_Count", "% Failed"]) 
+    else:
+        summary_df = (
         failed_df.groupby("Question")
         .size()
         .reset_index(name="Failed_Count")
