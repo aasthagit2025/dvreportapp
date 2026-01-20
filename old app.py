@@ -145,14 +145,14 @@ if raw_file and rules_file:
         # ==================================================
         if "Skip" in check_types:
       
-         targets = grid_cols if grid_cols else [question]
+           targets = grid_cols if grid_cols else [question]
 
-          for i in df.index:
-                if not expected_answered.loc[i]:
-                    if df.loc[i, targets].notna().any():
-                        for col in targets:
-                            highlight_cells.append((i, col, "skip"))
-                        failed_rows.append({
+            for i in df.index:
+                  if not expected_answered.loc[i]:
+                      if df.loc[i, targets].notna().any():
+                          for col in targets:
+                               highlight_cells.append((i, col, "skip"))
+                          failed_rows.append({
                             "RespID": df.loc[i, resp_id_col],
                             "Question": question,
                             "Issue": "Skip violation: should be blank"
