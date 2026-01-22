@@ -18,7 +18,7 @@ st.subheader("Setup Validation Rules")
 col_dl1, col_dl2 = st.columns(2)
 
 with col_dl1:
-def generate_template():
+ def generate_template():
     return pd.DataFrame({
         "Question": ["hAGE", "qAP12r", "q3", "qRank", "OE1"],
         "Check_Type": ["Range;Missing", "Skip;Multi-Select", "Skip;Range", "Skip;Ranking", "Skip;OpenEnd_Junk;Straightliner"],
