@@ -8,13 +8,13 @@ from openpyxl.styles import PatternFill
 # --------------------------------------------------
 # Page Config
 # --------------------------------------------------
-st.set_page_config(page_title="Ultimate Survey DV Engine", layout="wide")
-st.title("🛡️ Professional Survey Data Validation Engine")
+st.set_page_config(page_title="Survey DV Engine", layout="wide")
+st.title("🛡️ Survey Data Validation Engine")
 
 # --------------------------------------------------
 # 1. Validation Rules Template
 # --------------------------------------------------
-st.subheader("1. Setup Validation Rules")
+st.subheader("Setup Validation Rules")
 
 def generate_template():
     return pd.DataFrame({
@@ -53,6 +53,18 @@ if raw_file and rules_file:
     failed_rows = []
     error_locations = [] 
     rows_with_errors = set() 
+
+    # --- MACRO DOWNLOAD LOGIC ---
+    try:
+        with open("DV_Syntax_Macro.xlsm", "rb") as f:
+            st.download_button(
+                label="📑 Download DV Syntax Macro",
+                data=f,
+                file_name="DV_Syntax_Macro.xlsm",
+                mime="application/vnd.ms-excel.sheet.macroEnabled.12"
+            )
+    except FileNotFoundError:
+        st.warning("⚠️ 'DV_Syntax_Macro.xlsm' not found in folder. Please add it to enable download.")
 
     # --------------------------------------------------
     # 3. Validation Core Engine
