@@ -25,7 +25,7 @@ def generate_template():
             "IF hAGE IN (2) THEN ANSWERED ELSE BLANK;Min=1", 
             "IF q2 IN (12) THEN ANSWERED ELSE BLANK;1-8", 
             "IF q2 IN (12) THEN ANSWERED;Unique",
-            "IF q3 IN (1-5) THEN ANSWERED;MinLen=5;Threshold=1"
+            "IF q3 IN (1-5) THEN ANSWERED;MinLen=5"
         ],
         "Severity": ["Critical", "Critical", "Critical", "Warning", "Warning"]
     })
@@ -67,7 +67,7 @@ if raw_file and rules_file:
         target_cols = [c for c in df.columns if pattern.match(c)]
         if not target_cols: continue
 
-        # --- MASTER SKIP PARSER (Fixed for Q3) ---
+        # --- MASTER SKIP/REQUIREMENT PARSER ---
         is_required = pd.Series(True, index=df.index)
         if "Skip" in checks:
             try:
@@ -77,35 +77,48 @@ if raw_file and rules_file:
                     trigger = trigger_match.group(1)
                     if " IN " in trigger:
                         base_q, val_part = trigger.split(" IN ")
-                        val_list = eval(val_part.strip().replace('(', '[').replace(')', ']'))
-                        if isinstance(val_list, int): val_list = [val_list]
+                        val_str = val_part.strip().replace('(', '[').replace(')', ']').replace('-', ',')
+                        valid_vals = eval(val_str)
+                        if isinstance(valid_vals, int): valid_vals = [valid_vals]
                         
                         actual_base = next((c for c in df.columns if c.upper() == base_q.strip()), None)
                         if actual_base:
-                            is_required = df_numeric[actual_base].isin(val_list)
+                            meets_cond = df_numeric[actual_base].isin(valid_vals)
+                            # Logic: If condition met, it's required. If not met, it's NOT required.
+                            is_required = meets_cond
             except: pass
 
         for idx in df.index:
             row_data = df.loc[idx, target_cols]
             row_num = df_numeric.loc[idx, target_cols]
-            # Check if there is any meaningful data
-            is_answered = row_data.notna().any() and not (row_data.astype(str).str.strip() == "").all()
+            
+            # Boolean Flags
+            any_answered = row_data.notna().any() and not (row_data.astype(str).str.strip() == "").all()
+            all_answered = row_data.notna().all() and not (row_data.astype(str).str.strip() == "").any()
 
-            # 1. SKIP VIOLATION (Caught Q3 here)
-            if "Skip" in checks and not is_required[idx] and is_answered:
+            # 1. SKIP VIOLATION (Answered when should be Blank)
+            if "Skip" in checks and not is_required[idx] and any_answered:
                 failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Skip Violation: Should be Blank", "Severity": severity})
                 rows_with_errors.add(idx)
                 for col in target_cols: error_locations.append((idx, col))
                 continue 
 
-            # 2. MISSING CHECK
-            if ("Missing" in checks or "Not Null" in conds) and is_required[idx] and not is_answered:
-                failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Missing response", "Severity": severity})
-                rows_with_errors.add(idx)
-                for col in target_cols: error_locations.append((idx, col))
+            # 2. MISSING CHECK (Blank or Partial when should be Answered)
+            # Check for grid completion specifically
+            if is_required[idx]:
+                if not any_answered:
+                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Missing response (Required)", "Severity": severity})
+                    rows_with_errors.add(idx)
+                    for col in target_cols: error_locations.append((idx, col))
+                elif not all_answered and len(target_cols) > 1:
+                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Partial Grid: Some rows are blank", "Severity": severity})
+                    rows_with_errors.add(idx)
+                    # Highlight only the blank cells in the grid
+                    for col in target_cols:
+                        if pd.isna(df.loc[idx, col]): error_locations.append((idx, col))
 
             # 3. RANGE / SINGLE SELECT
-            if "Range" in checks and is_required[idx] and is_answered:
+            if "Range" in checks and is_required[idx] and any_answered:
                 rng = re.search(r"(\d+)-(\d+)", conds)
                 if rng:
                     low, high = map(int, rng.groups())
@@ -116,57 +129,64 @@ if raw_file and rules_file:
                             rows_with_errors.add(idx)
                             error_locations.append((idx, col))
 
-            # 4. MULTI-SELECT (Enhanced Count)
+            # 4. MULTI-SELECT (Restored logic)
             if "Multi-Select" in checks and is_required[idx]:
-                # Counts anything > 0 or not null depending on your data format
                 select_count = (row_num > 0).sum()
                 min_v = 1
-                if "Min=" in conds: min_v = int(re.search(r"Min=(\d+)", conds).group(1))
+                if "Min=" in conds:
+                    try: min_v = int(re.search(r"Min=(\d+)", conds).group(1))
+                    except: pass
                 if select_count < min_v:
                     failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": f"Multi-Select: {select_count} selected (Min {min_v})", "Severity": severity})
                     rows_with_errors.add(idx)
                     for col in target_cols: error_locations.append((idx, col))
 
-            # 5. RANKING (Full Uniqueness Check)
-            if "Ranking" in checks and is_required[idx] and is_answered:
+            # 5. STRAIGHTLINER (Robust)
+            if "Straightliner" in checks and len(target_cols) > 1 and all_answered:
+                if row_data.nunique() == 1:
+                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Straightliner detected", "Severity": severity})
+                    rows_with_errors.add(idx)
+                    for col in target_cols: error_locations.append((idx, col))
+
+            # 6. RANKING (Robust Uniqueness)
+            if "Ranking" in checks and is_required[idx] and any_answered:
                 clean_ranks = row_num.dropna()
                 if len(clean_ranks) != len(clean_ranks.unique()):
-                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Duplicate Ranks found", "Severity": severity})
+                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Ranking Error: Duplicates", "Severity": severity})
                     rows_with_errors.add(idx)
                     for col in target_cols: error_locations.append((idx, col))
 
-            # 6. STRAIGHTLINER (Full Grid Logic)
-            if "Straightliner" in checks and len(target_cols) > 1 and is_answered:
-                # nunique == 1 means all columns have the same value (e.g., all "3")
-                if row_data.nunique(dropna=True) == 1:
-                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Straightliner (Flat-lining)", "Severity": severity})
-                    rows_with_errors.add(idx)
-                    for col in target_cols: error_locations.append((idx, col))
-
-            # 7. OPEN END JUNK (Expanded Words)
-            if "OpenEnd_Junk" in checks and is_required[idx] and is_answered:
+            # 7. OPEN END JUNK (Robust)
+            if "OpenEnd_Junk" in checks and is_required[idx] and any_answered:
                 text_val = str(row_data.iloc[0]).lower().strip()
                 min_l = 5
-                if "MinLen=" in conds: min_l = int(re.search(r"MinLen=(\d+)", conds).group(1))
-                junk_list = ["asdf", "test", "none", "na", "n/a", "no", "nothing", "abc", "123", "good", "...", "nil"]
-                if len(text_val) < min_l or text_val in junk_list or len(set(text_val)) < 3:
-                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Open-End Junk/Too Short", "Severity": severity})
+                if "MinLen=" in conds:
+                    try: min_l = int(re.search(r"MinLen=(\d+)", conds).group(1))
+                    except: pass
+                junk = ["asdf", "test", "none", "na", "abc", "n/a", "nothing", "good"]
+                if len(text_val) < min_l or text_val in junk or len(set(text_val)) < 3:
+                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "OE Junk or Too Short", "Severity": severity})
                     rows_with_errors.add(idx)
                     for col in target_cols: error_locations.append((idx, col))
 
     # --------------------------------------------------
-    # 4. Report & Highlighting
+    # 4. Report Generation & Summary
     # --------------------------------------------------
     report_df = pd.DataFrame(failed_rows)
     if not report_df.empty:
-        st.write(f"### 🚩 Found {len(report_df)} Errors")
-        st.dataframe(report_df)
+        st.write(f"### 🚩 Found {len(report_df)} Validation Issues")
+        st.dataframe(report_df, use_container_width=True)
         
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             report_df.to_excel(writer, index=False, sheet_name='Error_Log')
-            df.to_excel(writer, index=False, sheet_name='Highlighted_Data')
             
+            # Create Summary Tab
+            summary = report_df.groupby(["Question", "Issue"]).size().reset_index(name="Error_Count")
+            summary.to_excel(writer, index=False, sheet_name='Summary')
+            
+            # Highlighted Raw Data
+            df.to_excel(writer, index=False, sheet_name='Highlighted_Data')
             ws = writer.sheets['Highlighted_Data']
             red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
             
@@ -175,11 +195,11 @@ if raw_file and rules_file:
                 c_idx = df.columns.get_loc(col_name) + 1
                 ws.cell(row=r_idx + 2, column=c_idx).fill = red_fill
             
-            # Highlight RespID column
+            # Highlight RespIDs
             rid_idx = df.columns.get_loc(resp_id_col) + 1
             for r_idx in rows_with_errors:
                 ws.cell(row=r_idx + 2, column=rid_idx).fill = red_fill
 
-        st.download_button("Download Full Report & Highlighted Data", output.getvalue(), "Survey_DV_Report.xlsx")
+        st.download_button("Download Full Report & Highlighting", output.getvalue(), "Final_Validation_Report.xlsx")
     else:
-        st.success("✅ Clean data! No issues found.")
+        st.success("✅ Your data is clean!")
