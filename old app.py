@@ -32,6 +32,19 @@ def generate_template():
 
 st.download_button("Download Rules Template", generate_template().to_csv(index=False), "DV_Rules.csv")
 
+with col_dl2:
+    # --- MACRO DOWNLOAD LOGIC ---
+    try:
+        with open("DV_Syntax_Macro.xlsm", "rb") as f:
+            st.download_button(
+                label="📑 Download DV Syntax Macro",
+                data=f,
+                file_name="DV_Syntax_Macro.xlsm",
+                mime="application/vnd.ms-excel.sheet.macroEnabled.12"
+            )
+    except FileNotFoundError:
+        st.warning("⚠️ 'DV_Syntax_Macro.xlsm' not found in folder. Please add it to enable download.")
+
 # --------------------------------------------------
 # 2. File Uploads
 # --------------------------------------------------
@@ -54,17 +67,6 @@ if raw_file and rules_file:
     error_locations = [] 
     rows_with_errors = set() 
 
-    # --- MACRO DOWNLOAD LOGIC ---
-    try:
-        with open("DV_Syntax_Macro.xlsm", "rb") as f:
-            st.download_button(
-                label="📑 Download DV Syntax Macro",
-                data=f,
-                file_name="DV_Syntax_Macro.xlsm",
-                mime="application/vnd.ms-excel.sheet.macroEnabled.12"
-            )
-    except FileNotFoundError:
-        st.warning("⚠️ 'DV_Syntax_Macro.xlsm' not found in folder. Please add it to enable download.")
 
     # --------------------------------------------------
     # 3. Validation Core Engine
