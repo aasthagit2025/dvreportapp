@@ -61,6 +61,7 @@ if raw_file and rules_file:
         conds = str(rule["Condition"])
         severity = rule.get("Severity", "Critical")
 
+        # Resolve columns (case insensitive)
         pattern = re.compile(rf"^{re.escape(q_name)}(_r\d+|_?\d+)?$", re.IGNORECASE)
         target_cols = [c for c in df.columns if pattern.match(c)]
         
@@ -77,29 +78,41 @@ if raw_file and rules_file:
                     base_q_name, val_part = trigger.split(" IN ")
                     valid_vals = eval(val_part.strip())
                     if isinstance(valid_vals, int): valid_vals = [valid_vals]
+                    
                     actual_base = next((c for c in df.columns if c.upper() == base_q_name.strip()), None)
                     if actual_base:
                         meets_trigger = df_numeric[actual_base].isin(valid_vals)
-                        if "ANSWERED" in cond_upper: is_required = meets_trigger
-                        elif "BLANK" in cond_upper: is_required = ~meets_trigger
+                        if "ANSWERED" in cond_upper:
+                            is_required = meets_trigger
+                        elif "BLANK" in cond_upper:
+                            is_required = ~meets_trigger
             except: pass
 
         for idx in df.index:
             row_data = df.loc[idx, target_cols]
             row_num = df_numeric.loc[idx, target_cols]
 
-            # 1. Skip Violation (Q3/Q12 Answered when should be blank)
+            # 1. SKIP VIOLATION (Answered when should be blank)
             if "Skip" in checks and not is_required[idx]:
                 if row_data.notna().any() and not (row_data.astype(str).str.strip() == "").all():
                     failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Should be Skipped but Answered", "Severity": severity})
-                    continue
 
-            # 2. Straightliner (Grid check)
-            if "Straightliner" in checks and len(target_cols) > 1:
-                if row_data.nunique() == 1 and row_data.notna().all():
-                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Straightliner detected", "Severity": severity})
+            # 2. RANGE CHECK (Fixed for hAGE and Q3)
+            if "Range" in checks and is_required[idx]:
+                rng_match = re.search(r"(\d+)-(\d+)", conds)
+                if rng_match:
+                    low, high = map(int, rng_match.groups())
+                    for col in target_cols:
+                        val = row_num[col]
+                        if pd.notna(val) and not (low <= val <= high):
+                            failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": col, "Issue": f"Value out of range ({low}-{high})", "Severity": severity})
 
-            # 3. Multi-Select (Count selections)
+            # 3. MISSING CHECK
+            if ("Missing" in checks or "Not Null" in conds) and is_required[idx]:
+                if row_data.isna().all() or (row_data.astype(str).str.strip() == "").all():
+                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Missing response", "Severity": severity})
+
+            # 4. MULTI-SELECT CHECK
             if "Multi-Select" in checks and is_required[idx]:
                 selected = (row_num > 0).sum()
                 min_val = 1
@@ -107,24 +120,23 @@ if raw_file and rules_file:
                 if selected < min_val:
                     failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": f"Multi-Select: {selected} selected (Min {min_val})", "Severity": severity})
 
-            # 4. Constant Sum (Total check)
+            # 5. STRAIGHTLINER / CONSTANT SUM / OPEN END (Remains as requested)
+            if "Straightliner" in checks and len(target_cols) > 1:
+                if row_data.nunique() == 1 and row_data.notna().all():
+                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Straightliner detected", "Severity": severity})
+
             if "ConstantSum" in checks and is_required[idx]:
                 target = 100
                 if "Total=" in conds: target = float(conds.split("Total=")[1].split(";")[0])
                 if row_num.sum() != target:
                     failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": f"Sum is {row_num.sum()}, expected {target}", "Severity": severity})
 
-            # 5. Open End Junk (The restored check)
             if "OpenEnd_Junk" in checks and is_required[idx]:
                 text = str(row_data.values[0]).lower().strip()
                 min_len = 5
                 if "MinLen=" in conds: min_len = int(conds.split("MinLen=")[1].split(";")[0])
                 if len(text) < min_len or text in ["asdf", "test", "none", "na"]:
                     failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Open end junk or too short", "Severity": severity})
-
-            # 6. Missing / Range (Generic checks)
-            if ("Missing" in checks) and is_required[idx] and row_data.isna().all():
-                failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Missing response", "Severity": severity})
 
     # --------------------------------------------------
     # 4. Report Generation
