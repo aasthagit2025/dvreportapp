@@ -90,38 +90,40 @@ if raw_file and rules_file:
             target_cols = [c for c in df.columns if pattern.match(c)]
         
         if not target_cols: continue
-
-        # --- STEP 2: SKIP PARSER (Fixed for Attributes) ---
-        # Default to "Required" unless a Skip condition says otherwise
+# --- STEP 2: SKIP PARSER (Safe Integration) ---
         is_required = pd.Series(True, index=df.index)
-        
-        if "Skip" in checks:
+        forbidden_val = None
+        eligibility_map = None
+
+        if "Skip" in checks or "Attribute-Skip" in checks:
             try:
-                # Clean the condition string
                 cond_upper = conds.upper()
                 if "IF " in cond_upper and " THEN " in cond_upper:
                     trigger_part = cond_upper.split("IF ")[1].split(" THEN")[0]
+                    action_part = cond_upper.split(" THEN ")[1]
                     
-                    # Logic: IF [BASE_Q] IN (VALUES)
-                    if " IN " in trigger_part:
-                        base_q, val_part = trigger_part.split(" IN ")
-                        base_q = base_q.strip()
+                    # Standard Trigger Parsing (e.g., RQ5 IN (2))
+                    base_q, val_part = trigger_part.split(" IN ")
+                    val_str = val_part.strip().replace('(', '').replace(')', '')
+                    valid_trigger_vals = [int(x.strip()) for x in val_str.split(",")]
+                    actual_base = next((c for c in df.columns if c.upper() == base_q.strip()), None)
+                    
+                    if actual_base:
+                        is_eligible = df_numeric[actual_base].isin(valid_trigger_vals)
                         
-                        # Convert (1,2,3) or (1-5) to a Python list
-                        val_str = val_part.strip().replace('(', '').replace(')', '')
-                        if "-" in val_str:
-                            start, end = map(int, val_str.split("-"))
-                            valid_vals = list(range(start, end + 1))
-                        else:
-                            valid_vals = [int(x.strip()) for x in val_str.split(",")]
+                        # NEW LOGIC: Only fires if you use "Attribute-Skip"
+                        if "Attribute-Skip" in checks and " ELSE BLANK" in action_part:
+                            target_val_str = action_part.split(" ELSE ")[0].strip()
+                            if target_val_str.isdigit():
+                                forbidden_val = int(target_val_str)
+                                eligibility_map = is_eligible 
                         
-                        actual_base = next((c for c in df.columns if c.upper() == base_q), None)
-                        if actual_base:
-                            # Update requirement: Must be answered ONLY IF base question is in valid values
-                            is_required = df_numeric[actual_base].isin(valid_vals)
+                        # EXISTING LOGIC: Standard Skip still works exactly the same
+                        if "Skip" in checks:
+                            is_required = is_eligible
             except Exception as e:
                 st.warning(f"Skip logic error in {q_name}: {e}")
-
+                
         # --- STEP 3: ROW VALIDATION ---
         for idx in df.index:
             row_raw = df.loc[idx, target_cols]
@@ -135,16 +137,24 @@ if raw_file and rules_file:
             any_ans = row_raw.notna().any() and not (row_raw.astype(str).str.strip() == "").all()
             
             # ATTRIBUTE SKIP CHECK: If not required but has data -> Error
-            if "Skip" in checks and not is_required[idx] and any_ans:
-                failed_rows.append({
-                    "RespID": df.loc[idx, resp_id_col], 
-                    "Question": q_name, 
-                    "Issue": "Skip Violation: Should be Blank (Attribute)", 
-                    "Severity": severity
-                })
-                rows_with_errors.add(idx)
-                for col in target_cols: error_locations.append((idx, col))
-                continue # Stop further checks for this row if skip is violated
+        for idx in df.index:
+            row_raw = df.loc[idx, target_cols]
+            row_num = df_numeric.loc[idx, target_cols]
+            any_ans = row_raw.notna().any() and not (row_raw.astype(str).str.strip() == "").all()
+
+            # --- ONLY TARGETS ATTRIBUTE 11 (Housewife) ---
+            if forbidden_val is not None and eligibility_map is not None:
+                # If NOT eligible (Male) but value 11 is present
+                if not eligibility_map[idx] and (row_num == forbidden_val).any():
+                    failed_rows.append({
+                        "RespID": df.loc[idx, resp_id_col], 
+                        "Question": q_name, 
+                        "Issue": f"Logic Violation: Code {forbidden_val} only allowed for Females", 
+                        "Severity": severity
+                    })
+                    rows_with_errors.add(idx)
+                    for col in target_cols: error_locations.append((idx, col))
+                  
 
             # Skip Violation
             if "Skip" in checks and not is_required[idx] and any_ans:
