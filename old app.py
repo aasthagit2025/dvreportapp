@@ -77,48 +77,70 @@ if raw_file and rules_file:
         conds = str(rule["Condition"])
         severity = rule.get("Severity", "Critical")
 
-        # --- STEP 1: SMART COLUMN SELECTION (FIXED INDENTATION) ---
-        # Look for exact match first to prevent RQ1 matching RQ11/RQ15
+# --- STEP 1: SMART COLUMN SELECTION (Attribute Aware) ---
+        # 1. Try Exact Match First (This handles specific attributes like RQ9_1)
         target_cols = [c for c in df.columns if c.lower() == q_name.lower()]
         
-        # If no exact match, look for grid children (e.g., RQ9_1, RQ9_2)
+        # 2. If no exact match, search for Grid children (handles whole questions like RQ9)
         if not target_cols:
             if q_name[-1].isdigit():
-                # If name ends in digit (RQ1), suffix must be non-digit (prevents RQ11 match)
                 pattern = re.compile(rf"^{re.escape(q_name)}(_|[a-zA-Z]).*$", re.IGNORECASE)
             else:
-                # If name ends in letter (RQ), suffix can be anything
                 pattern = re.compile(rf"^{re.escape(q_name)}(_|[a-zA-Z]|\d)+$", re.IGNORECASE)
             target_cols = [c for c in df.columns if pattern.match(c)]
         
-        if not target_cols:
-            continue
+        if not target_cols: continue
 
-        # --- STEP 2: SKIP LOGIC (AIGNS WITH COLUMN SELECTION) ---
+        # --- STEP 2: SKIP PARSER (Fixed for Attributes) ---
+        # Default to "Required" unless a Skip condition says otherwise
         is_required = pd.Series(True, index=df.index)
+        
         if "Skip" in checks:
             try:
-                trigger_match = re.search(r"IF\s+(.*?)\s+THEN", conds.upper())
-                if trigger_match:
-                    trigger = trigger_match.group(1)
-                    if " IN " in trigger:
-                        base_q, val_part = trigger.split(" IN ")
-                        val_str = val_part.strip().replace('(', '[').replace(')', ']').replace('-', ',')
-                        valid_vals = eval(val_str)
-                        if isinstance(valid_vals, int): valid_vals = [valid_vals]
-                        actual_base = next((c for c in df.columns if c.upper() == base_q.strip()), None)
+                # Clean the condition string
+                cond_upper = conds.upper()
+                if "IF " in cond_upper and " THEN " in cond_upper:
+                    trigger_part = cond_upper.split("IF ")[1].split(" THEN")[0]
+                    
+                    # Logic: IF [BASE_Q] IN (VALUES)
+                    if " IN " in trigger_part:
+                        base_q, val_part = trigger_part.split(" IN ")
+                        base_q = base_q.strip()
+                        
+                        # Convert (1,2,3) or (1-5) to a Python list
+                        val_str = val_part.strip().replace('(', '').replace(')', '')
+                        if "-" in val_str:
+                            start, end = map(int, val_str.split("-"))
+                            valid_vals = list(range(start, end + 1))
+                        else:
+                            valid_vals = [int(x.strip()) for x in val_str.split(",")]
+                        
+                        actual_base = next((c for c in df.columns if c.upper() == base_q), None)
                         if actual_base:
+                            # Update requirement: Must be answered ONLY IF base question is in valid values
                             is_required = df_numeric[actual_base].isin(valid_vals)
-            except:
-                pass
+            except Exception as e:
+                st.warning(f"Skip logic error in {q_name}: {e}")
 
         # --- STEP 3: ROW VALIDATION ---
         for idx in df.index:
             row_raw = df.loc[idx, target_cols]
             row_num = df_numeric.loc[idx, target_cols]
             
+            # Check if user provided any answer
             any_ans = row_raw.notna().any() and not (row_raw.astype(str).str.strip() == "").all()
-            all_ans = row_raw.notna().all() and not (row_raw.astype(str).str.strip() == "").any()
+            
+            # ATTRIBUTE SKIP CHECK: If not required but has data -> Error
+            if "Skip" in checks and not is_required[idx] and any_ans:
+                failed_rows.append({
+                    "RespID": df.loc[idx, resp_id_col], 
+                    "Question": q_name, 
+                    "Issue": "Skip Violation: Should be Blank (Attribute)", 
+                    "Severity": severity
+                })
+                rows_with_errors.add(idx)
+                for col in target_cols: error_locations.append((idx, col))
+                continue # Stop further checks for this row if skip is violated
 
             # Skip Violation
             if "Skip" in checks and not is_required[idx] and any_ans:
