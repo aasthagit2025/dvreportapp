@@ -70,25 +70,35 @@ if raw_file and rules_file:
     rows_with_errors = set() 
 
 
-    # --------------------------------------------------
-    # 3. Validation Core Engine
-    # --------------------------------------------------
+# --- 3. Validation Core Engine ---
     for _, rule in rules_df.iterrows():
         q_name = str(rule["Question"]).strip()
-        checks = [c.strip() for c in str(rule["Check_Type"]).split(";")]
+        checks = str(rule["Check_Type"])
         conds = str(rule["Condition"])
         severity = rule.get("Severity", "Critical")
 
-        pattern = re.compile(rf"^{re.escape(q_name)}(_r\d+|_?\d+)?$", re.IGNORECASE)
-        target_cols = [c for c in df.columns if pattern.match(c)]
-        if not target_cols: continue
+        # --- STEP 1: SMART COLUMN SELECTION (FIXED INDENTATION) ---
+        # Look for exact match first to prevent RQ1 matching RQ11/RQ15
+        target_cols = [c for c in df.columns if c.lower() == q_name.lower()]
+        
+        # If no exact match, look for grid children (e.g., RQ9_1, RQ9_2)
+        if not target_cols:
+            if q_name[-1].isdigit():
+                # If name ends in digit (RQ1), suffix must be non-digit (prevents RQ11 match)
+                pattern = re.compile(rf"^{re.escape(q_name)}(_|[a-zA-Z]).*$", re.IGNORECASE)
+            else:
+                # If name ends in letter (RQ), suffix can be anything
+                pattern = re.compile(rf"^{re.escape(q_name)}(_|[a-zA-Z]|\d)+$", re.IGNORECASE)
+            target_cols = [c for c in df.columns if pattern.match(c)]
+        
+        if not target_cols:
+            continue
 
-        # --- MASTER SKIP/REQUIREMENT PARSER ---
+        # --- STEP 2: SKIP LOGIC (AIGNS WITH COLUMN SELECTION) ---
         is_required = pd.Series(True, index=df.index)
         if "Skip" in checks:
             try:
-                cond_upper = conds.upper()
-                trigger_match = re.search(r"IF\s+(.*?)\s+THEN", cond_upper)
+                trigger_match = re.search(r"IF\s+(.*?)\s+THEN", conds.upper())
                 if trigger_match:
                     trigger = trigger_match.group(1)
                     if " IN " in trigger:
@@ -96,42 +106,39 @@ if raw_file and rules_file:
                         val_str = val_part.strip().replace('(', '[').replace(')', ']').replace('-', ',')
                         valid_vals = eval(val_str)
                         if isinstance(valid_vals, int): valid_vals = [valid_vals]
-                        
                         actual_base = next((c for c in df.columns if c.upper() == base_q.strip()), None)
                         if actual_base:
-                            meets_cond = df_numeric[actual_base].isin(valid_vals)
-                            # Logic: If condition met, it's required. If not met, it's NOT required.
-                            is_required = meets_cond
-            except: pass
+                            is_required = df_numeric[actual_base].isin(valid_vals)
+            except:
+                pass
 
+        # --- STEP 3: ROW VALIDATION ---
         for idx in df.index:
-            row_data = df.loc[idx, target_cols]
+            row_raw = df.loc[idx, target_cols]
             row_num = df_numeric.loc[idx, target_cols]
             
-            # Boolean Flags
-            any_answered = row_data.notna().any() and not (row_data.astype(str).str.strip() == "").all()
-            all_answered = row_data.notna().all() and not (row_data.astype(str).str.strip() == "").any()
+            any_ans = row_raw.notna().any() and not (row_raw.astype(str).str.strip() == "").all()
+            all_ans = row_raw.notna().all() and not (row_raw.astype(str).str.strip() == "").any()
 
-            # 1. SKIP VIOLATION (Answered when should be Blank)
-            if "Skip" in checks and not is_required[idx] and any_answered:
-                failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Skip Violation: Should be Blank", "Severity": severity})
+            # Skip Violation
+            if "Skip" in checks and not is_required[idx] and any_ans:
+                failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Skip Violation", "Severity": severity})
                 rows_with_errors.add(idx)
                 for col in target_cols: error_locations.append((idx, col))
                 continue 
 
-            # 2. MISSING CHECK (Blank or Partial when should be Answered)
-            # Check for grid completion specifically
+            # Missing/Grid Check
             if is_required[idx]:
-                if not any_answered:
-                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Missing response (Required)", "Severity": severity})
+                if not any_ans:
+                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Missing response", "Severity": severity})
                     rows_with_errors.add(idx)
                     for col in target_cols: error_locations.append((idx, col))
-                elif not all_answered and len(target_cols) > 1:
-                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Partial Grid: Some rows are blank", "Severity": severity})
+                elif not all_ans and len(target_cols) > 1:
+                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Incomplete Grid", "Severity": severity})
                     rows_with_errors.add(idx)
-                    # Highlight only the blank cells in the grid
                     for col in target_cols:
                         if pd.isna(df.loc[idx, col]): error_locations.append((idx, col))
+
 
             # 3. RANGE / SINGLE SELECT
             if "Range" in checks and is_required[idx] and any_answered:
@@ -182,6 +189,17 @@ if raw_file and rules_file:
                 junk = ["asdf", "test", "none", "na", "abc", "n/a", "nothing", "good"]
                 if len(text_val) < min_l or text_val in junk or len(set(text_val)) < 3:
                     failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "OE Junk or Too Short", "Severity": severity})
+                    rows_with_errors.add(idx)
+                    for col in target_cols: error_locations.append((idx, col))
+
+                    #8. Constant Sum
+            if "ConstantSum" in checks and is_required[idx] and any_ans:
+                target_sum = 100
+                if "Total=" in conds:
+                    try: target_sum = float(re.search(r"Total=(\d+)", conds).group(1))
+                    except: pass
+                if row_num.sum() != target_sum:
+                    failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": f"Sum {row_num.sum()} != {target_sum}", "Severity": severity})
                     rows_with_errors.add(idx)
                     for col in target_cols: error_locations.append((idx, col))
 
