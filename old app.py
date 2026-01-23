@@ -14,7 +14,6 @@ st.title("🛡️ Survey Data Validation Engine")
 # --------------------------------------------------
 # 1. Validation Rules Template
 # --------------------------------------------------
-st.subheader("Setup Validation Rules")
 col_dl1, col_dl2 = st.columns(2)
 
 with col_dl1:
