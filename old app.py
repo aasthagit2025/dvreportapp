@@ -141,7 +141,7 @@ if raw_file and rules_file:
 
 
             # 3. RANGE / SINGLE SELECT
-            if "Range" in checks and is_required[idx] and any_answered:
+            if "Range" in checks and is_required[idx] and any_ans:
                 rng = re.search(r"(\d+)-(\d+)", conds)
                 if rng:
                     low, high = map(int, rng.groups())
@@ -165,14 +165,14 @@ if raw_file and rules_file:
                     for col in target_cols: error_locations.append((idx, col))
 
             # 5. STRAIGHTLINER (Robust)
-            if "Straightliner" in checks and len(target_cols) > 1 and all_answered:
+            if "Straightliner" in checks and len(target_cols) > 1 and all_ans:
                 if row_data.nunique() == 1:
                     failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Straightliner detected", "Severity": severity})
                     rows_with_errors.add(idx)
                     for col in target_cols: error_locations.append((idx, col))
 
             # 6. RANKING (Robust Uniqueness)
-            if "Ranking" in checks and is_required[idx] and any_answered:
+            if "Ranking" in checks and is_required[idx] and any_ans:
                 clean_ranks = row_num.dropna()
                 if len(clean_ranks) != len(clean_ranks.unique()):
                     failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Ranking Error: Duplicates", "Severity": severity})
@@ -180,7 +180,7 @@ if raw_file and rules_file:
                     for col in target_cols: error_locations.append((idx, col))
 
             # 7. OPEN END JUNK (Robust)
-            if "OpenEnd_Junk" in checks and is_required[idx] and any_answered:
+            if "OpenEnd_Junk" in checks and is_required[idx] and any_ans:
                 text_val = str(row_data.iloc[0]).lower().strip()
                 min_l = 5
                 if "MinLen=" in conds:
