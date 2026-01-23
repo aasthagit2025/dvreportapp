@@ -126,6 +126,10 @@ if raw_file and rules_file:
         for idx in df.index:
             row_raw = df.loc[idx, target_cols]
             row_num = df_numeric.loc[idx, target_cols]
+
+            # --- ADD THESE TWO LINES HERE ---
+            any_ans = row_raw.notna().any() and not (row_raw.astype(str).str.strip() == "").all()
+            all_ans = row_raw.notna().all() and not (row_raw.astype(str).str.strip() == "").any()
             
             # Check if user provided any answer
             any_ans = row_raw.notna().any() and not (row_raw.astype(str).str.strip() == "").all()
