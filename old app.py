@@ -10,41 +10,57 @@ from openpyxl.styles import PatternFill
 # --------------------------------------------------
 st.set_page_config(page_title="Survey DV Engine", layout="wide")
 st.title("🛡️ Survey Data Validation Engine")
-
 # --------------------------------------------------
-# 1. Validation Rules Template
+# 1. Validation Resources (Aligned Layout)
 # --------------------------------------------------
-col_dl1, col_dl2 = st.columns(2)
+col_left, col_right = st.columns(2)
 
-with col_dl1:
- def generate_template():
-    return pd.DataFrame({
-        "Question": ["hAGE", "qAP12r", "q3", "qRank", "OE1"],
-        "Check_Type": ["Range;Missing", "Skip;Multi-Select", "Skip;Range", "Skip;Ranking", "Skip;OpenEnd_Junk;Straightliner"],
-        "Condition": [
-            "1-7;Not Null", 
-            "IF hAGE IN (2) THEN ANSWERED ELSE BLANK;Min=1", 
-            "IF q2 IN (12) THEN ANSWERED ELSE BLANK;1-8", 
-            "IF q2 IN (12) THEN ANSWERED;Unique",
-            "IF q3 IN (1-5) THEN ANSWERED;MinLen=5"
-        ],
-        "Severity": ["Critical", "Critical", "Critical", "Warning", "Warning"]
-    })
+with col_left:
+    st.markdown("### 📋 Rules Template")
+    st.write("Download the Excel template to define your validation logic.")
+    
+    def generate_template():
+        return pd.DataFrame({
+            "Question": ["RQ5", "RQ7", "RQ7", "RQ10_2", "RQ11"],
+            "Check_Type": ["Range;Missing", "Range;Missing", "Attribute-Skip", "Range;Missing", "Multi-Select"],
+            "Condition": [
+                "1-2;Not Null", 
+                "1-14;Not Null", 
+                "IF RQ5 IN (2) THEN 11 ELSE BLANK", 
+                "1-1;Not Null",
+                "Min=1"
+            ],
+            "Severity": ["Critical", "Critical", "Critical", "Critical", "Critical"]
+        })
+    
+    st.download_button(
+        label="📥 Download Rules Template",
+        data=generate_template().to_csv(index=False).encode('utf-8'),
+        file_name='DV_Rules_Template.csv',
+        mime='text/csv',
+        use_container_width=True
+    )
 
-st.download_button("Download Rules Template", generate_template().to_csv(index=False), "DV_Rules.csv")
-
-with col_dl2:
-    # --- MACRO DOWNLOAD LOGIC ---
+with col_right:
+    st.markdown("### ⚙️ DV Macro Tool")
+    st.write("Download the team's VBA Macro tool for advanced processing.")
+    
+    # Replace 'DV_Macro.xlsm' with your actual team macro filename
     try:
-        with open("DV_Syntax_Macro.xlsm", "rb") as f:
-            st.download_button(
-                label="📑 Download DV Syntax Macro",
-                data=f,
-                file_name="DV_Syntax_Macro.xlsm",
-                mime="application/vnd.ms-excel.sheet.macroEnabled.12"
-            )
+        with open("DV_Macro.xlsm", "rb") as f:
+            macro_data = f.read()
+            
+        st.download_button(
+            label="📥 Download DV Macro (.xlsm)",
+            data=macro_data,
+            file_name='DV_Macro_Tool.xlsm',
+            mime='application/vnd.ms-excel.sheet.macroEnabled.12',
+            use_container_width=True
+        )
     except FileNotFoundError:
-        st.warning("⚠️ 'DV_Syntax_Macro.xlsm' not found in folder. Please add it to enable download.")
+        st.warning("⚠️ Macro file 'DV_Macro.xlsm' not found in app folder.")
+        # Placeholder button to maintain alignment even if file is missing
+        st.button("📥 Download DV Macro (File Missing)", disabled=True, use_container_width=True)
 
 # --------------------------------------------------
 # 2. File Uploads
@@ -89,40 +105,38 @@ if raw_file and rules_file:
             target_cols = [c for c in df.columns if pattern.match(c)]
         
         if not target_cols: continue
-# --- STEP 2: SKIP PARSER (Safe Integration) ---
-        is_required = pd.Series(True, index=df.index)
-        forbidden_val = None
-        eligibility_map = None
 
-        if "Skip" in checks or "Attribute-Skip" in checks:
+        # --- STEP 2: SKIP PARSER (Fixed for Attributes) ---
+        # Default to "Required" unless a Skip condition says otherwise
+        is_required = pd.Series(True, index=df.index)
+        
+        if "Skip" in checks:
             try:
+                # Clean the condition string
                 cond_upper = conds.upper()
                 if "IF " in cond_upper and " THEN " in cond_upper:
                     trigger_part = cond_upper.split("IF ")[1].split(" THEN")[0]
-                    action_part = cond_upper.split(" THEN ")[1]
                     
-                    # Standard Trigger Parsing (e.g., RQ5 IN (2))
-                    base_q, val_part = trigger_part.split(" IN ")
-                    val_str = val_part.strip().replace('(', '').replace(')', '')
-                    valid_trigger_vals = [int(x.strip()) for x in val_str.split(",")]
-                    actual_base = next((c for c in df.columns if c.upper() == base_q.strip()), None)
-                    
-                    if actual_base:
-                        is_eligible = df_numeric[actual_base].isin(valid_trigger_vals)
+                    # Logic: IF [BASE_Q] IN (VALUES)
+                    if " IN " in trigger_part:
+                        base_q, val_part = trigger_part.split(" IN ")
+                        base_q = base_q.strip()
                         
-                        # NEW LOGIC: Only fires if you use "Attribute-Skip"
-                        if "Attribute-Skip" in checks and " ELSE BLANK" in action_part:
-                            target_val_str = action_part.split(" ELSE ")[0].strip()
-                            if target_val_str.isdigit():
-                                forbidden_val = int(target_val_str)
-                                eligibility_map = is_eligible 
+                        # Convert (1,2,3) or (1-5) to a Python list
+                        val_str = val_part.strip().replace('(', '').replace(')', '')
+                        if "-" in val_str:
+                            start, end = map(int, val_str.split("-"))
+                            valid_vals = list(range(start, end + 1))
+                        else:
+                            valid_vals = [int(x.strip()) for x in val_str.split(",")]
                         
-                        # EXISTING LOGIC: Standard Skip still works exactly the same
-                        if "Skip" in checks:
-                            is_required = is_eligible
+                        actual_base = next((c for c in df.columns if c.upper() == base_q), None)
+                        if actual_base:
+                            # Update requirement: Must be answered ONLY IF base question is in valid values
+                            is_required = df_numeric[actual_base].isin(valid_vals)
             except Exception as e:
                 st.warning(f"Skip logic error in {q_name}: {e}")
-                
+
         # --- STEP 3: ROW VALIDATION ---
         for idx in df.index:
             row_raw = df.loc[idx, target_cols]
@@ -136,24 +150,16 @@ if raw_file and rules_file:
             any_ans = row_raw.notna().any() and not (row_raw.astype(str).str.strip() == "").all()
             
             # ATTRIBUTE SKIP CHECK: If not required but has data -> Error
-        for idx in df.index:
-            row_raw = df.loc[idx, target_cols]
-            row_num = df_numeric.loc[idx, target_cols]
-            any_ans = row_raw.notna().any() and not (row_raw.astype(str).str.strip() == "").all()
-
-            # --- ONLY TARGETS ATTRIBUTE 11 (Housewife) ---
-            if forbidden_val is not None and eligibility_map is not None:
-                # If NOT eligible (Male) but value 11 is present
-                if not eligibility_map[idx] and (row_num == forbidden_val).any():
-                    failed_rows.append({
-                        "RespID": df.loc[idx, resp_id_col], 
-                        "Question": q_name, 
-                        "Issue": f"Logic Violation: Code {forbidden_val} only allowed for Females", 
-                        "Severity": severity
-                    })
-                    rows_with_errors.add(idx)
-                    for col in target_cols: error_locations.append((idx, col))
-                  
+            if "Skip" in checks and not is_required[idx] and any_ans:
+                failed_rows.append({
+                    "RespID": df.loc[idx, resp_id_col], 
+                    "Question": q_name, 
+                    "Issue": "Skip Violation: Should be Blank (Attribute)", 
+                    "Severity": severity
+                })
+                rows_with_errors.add(idx)
+                for col in target_cols: error_locations.append((idx, col))
+                continue # Stop further checks for this row if skip is violated
 
             # Skip Violation
             if "Skip" in checks and not is_required[idx] and any_ans:
