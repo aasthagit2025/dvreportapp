@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 import numpy as np
+import pyreadstat  # Required for SPSS
 import re
 from openpyxl.styles import PatternFill
 
@@ -63,26 +64,48 @@ with col_right:
         st.button("📥 Download DV Macro (File Missing)", disabled=True, use_container_width=True)
 
 # --------------------------------------------------
-# 2. File Uploads
+# 2. File Uploads (Enhanced for SPSS)
 # --------------------------------------------------
 st.divider()
+
+# Added format selection to handle SPSS logic separately
+import_format = st.radio("Select Data Format:", ["Excel/CSV", "SPSS (.sav)"], horizontal=True)
+
 col1, col2 = st.columns(2)
+
 with col1:
-    raw_file = st.file_uploader("Upload Raw Data (CSV/XLSX)", type=["csv", "xlsx"])
+    if import_format == "SPSS (.sav)":
+        raw_file = st.file_uploader("Upload Raw Data (SAV)", type=["sav"])
+    else:
+        raw_file = st.file_uploader("Upload Raw Data (CSV/XLSX)", type=["csv", "xlsx"])
+
 with col2:
     rules_file = st.file_uploader("Upload Validation Rules (CSV/XLSX)", type=["csv", "xlsx"])
 
 if raw_file and rules_file:
-    df = pd.read_csv(raw_file) if raw_file.name.endswith('.csv') else pd.read_excel(raw_file)
+    # --- DATA IMPORT LOGIC ---
+    if import_format == "SPSS (.sav)":
+        import pyreadstat
+        # meta contains the Variable Names and Type/Labels for your Macro
+        df, meta = pyreadstat.read_sav(raw_file)
+        
+        # Display metadata for macro reference
+        with st.expander("📋 View SPSS Variable Metadata (For Macro Reference)"):
+            meta_df = pd.DataFrame({'Var Name': meta.column_names, 'Label': meta.column_labels})
+            st.dataframe(meta_df, use_container_width=True)
+    else:
+        df = pd.read_csv(raw_file) if raw_file.name.endswith('.csv') else pd.read_excel(raw_file)
+    
     rules_df = pd.read_csv(rules_file) if rules_file.name.endswith('.csv') else pd.read_excel(rules_file)
     
+    # --- PRE-PROCESSING ---
     df.columns = df.columns.str.strip()
     resp_id_col = df.columns[0]
     df_numeric = df.apply(pd.to_numeric, errors='coerce')
     
     failed_rows = []
     error_locations = [] 
-    rows_with_errors = set() 
+    rows_with_errors = set()
 
 
 # --- 3. Validation Core Engine ---
