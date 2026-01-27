@@ -53,12 +53,12 @@ with col_right:
         st.download_button(
             label="📥 Download DV Macro (.xlsm)",
             data=macro_data,
-            file_name='DV_Macro_Tool.xlsm',
+            file_name='DV_Syntax_Macro.xlsm',
             mime='application/vnd.ms-excel.sheet.macroEnabled.12',
             use_container_width=True
         )
     except FileNotFoundError:
-        st.warning("⚠️ Macro file 'DV_Macro.xlsm' not found in app folder.")
+        st.warning("⚠️ Macro file 'DV_Syntax_Macro.xlsm' not found in app folder.")
         # Placeholder button to maintain alignment even if file is missing
         st.button("📥 Download DV Macro (File Missing)", disabled=True, use_container_width=True)
 
