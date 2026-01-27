@@ -47,13 +47,13 @@ with col_right:
     
     # Replace 'DV_Macro.xlsm' with your actual team macro filename
     try:
-        with open("DV_Macro.xlsm", "rb") as f:
+        with open("DV_Syntax_Macro.xlsm", "rb") as f:
             macro_data = f.read()
             
         st.download_button(
-            label="📥 Download DV Macro (.xlsm)",
+            label="📥 Download DV Syntax Macro (.xlsm)",
             data=macro_data,
-            file_name='DV_Syntax_Macro.xlsm',
+            file_name="DV_Syntax_Macro.xlsm",
             mime='application/vnd.ms-excel.sheet.macroEnabled.12',
             use_container_width=True
         )
