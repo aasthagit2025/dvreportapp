@@ -101,7 +101,7 @@ if raw_file and rules_file:
         "Type": [translate_type(n) for n in meta.column_names]
     })
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
              sync_df.to_excel(writer, index=False, sheet_name='Metadata')
         processed_data = output.getvalue()
         
