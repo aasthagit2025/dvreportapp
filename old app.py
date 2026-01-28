@@ -100,6 +100,7 @@ if raw_file and rules_file:
         "Var Name": meta.column_names,
         "Type": [translate_type(n) for n in meta.column_names]
     })
+        csv_data = sync_df.to_csv(index=False)
         
         # Display metadata for macro reference
         st.success("✅ SPSS Variable View extracted!")
