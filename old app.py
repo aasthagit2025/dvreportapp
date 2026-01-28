@@ -89,10 +89,20 @@ if raw_file and rules_file:
         # meta contains the Variable Names and Type/Labels for your Macro
         df, meta = pyreadstat.read_sav(raw_file)
         
+        sync_df = pd.DataFrame({
+        "Var Name": meta.column_names,
+        "Type": meta.column_labels
+    })
+        
         # Display metadata for macro reference
-        with st.expander("📋 View SPSS Variable Metadata (For Macro Reference)"):
-            meta_df = pd.DataFrame({'Var Name': meta.column_names, 'Label': meta.column_labels})
-            st.dataframe(meta_df, use_container_width=True)
+        st.success("✅ SPSS Variable View extracted!")
+        st.download_button(
+        label="📥 Download Sync File for Macro",
+        data=sync_df.to_csv(index=False).encode('utf-8'),
+        file_name="macro_sync.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
     else:
         df = pd.read_csv(raw_file) if raw_file.name.endswith('.csv') else pd.read_excel(raw_file)
     
