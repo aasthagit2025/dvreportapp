@@ -100,15 +100,18 @@ if raw_file and rules_file:
         "Var Name": meta.column_names,
         "Type": [translate_type(n) for n in meta.column_names]
     })
-        csv_data = sync_df.to_csv(index=False)
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+             sync_df.to_excel(writer, index=False, sheet_name='Metadata')
+        processed_data = output.getvalue()
         
         # Display metadata for macro reference
         st.success("✅ SPSS Variable View extracted!")
         st.download_button(
         label="📥 Download Sync File for Macro",
         data=sync_df.to_csv(index=False).encode('utf-8'),
-        file_name="macro_sync.csv",
-        mime="text/csv",
+        file_name="macro_sync.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
     else:
