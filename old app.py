@@ -88,10 +88,17 @@ if raw_file and rules_file:
         import pyreadstat
         # meta contains the Variable Names and Type/Labels for your Macro
         df, meta = pyreadstat.read_sav(raw_file)
+
+        # Simple translator: If it starts with 'A' it's a String, otherwise it's Numeric
+        def translate_type(var_name):
+            spss_code = meta.original_variable_types.get(var_name, "F")
+            return "String" if spss_code.startswith("A") else "Numeric"
         
+
+
         sync_df = pd.DataFrame({
         "Var Name": meta.column_names,
-        "Type": meta.column_labels
+        "Type": [translate_type(n) for n in meta.column_names]
     })
         
         # Display metadata for macro reference
