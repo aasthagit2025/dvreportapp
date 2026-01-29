@@ -109,7 +109,7 @@ if raw_file and rules_file:
         st.success("✅ SPSS Variable View extracted!")
         st.download_button(
         label="📥 Download Sync File for Macro",
-        data=sync_df.to_csv(index=False).encode('utf-8'),
+        data=processed_data,
         file_name="macro_sync.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
