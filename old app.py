@@ -82,6 +82,9 @@ with col1:
 with col2:
     rules_file = st.file_uploader("Upload Validation Rules (CSV/XLSX)", type=["csv", "xlsx"])
 
+# Initializing data variables as None
+    df = None
+    rules_df = None
 
     # --- DATA IMPORT LOGIC ---
     if import_format == "SPSS (.sav)":
@@ -115,13 +118,20 @@ with col2:
         use_container_width=True
     )
     else:
-        df = pd.read_csv(raw_file) if raw_file.name.endswith('.csv') else pd.read_excel(raw_file)
+        if raw_file.name.endswith('.csv'):
+            df = pd.read_csv(raw_file)
+        else:
+            df = pd.read_excel(raw_file)
 
-    if raw_file and rules_file:
+if df is not None and rules_file is not None:
+    # Read Rules
+    if rules_file.name.endswith('.csv'):
+        rules_df = pd.read_csv(rules_file)
+    else:
+        rules_df = pd.read_excel(rules_file)
+    
+    st.success("✅ Files ready for Python Validation.")
         
-        rules_df = pd.read_csv(rules_file) if rules_file.name.endswith('.csv') else pd.read_excel(rules_file)
-
-        st.success("✅ Both files uploaded. Ready for Python Validation.")
     
     # --- PRE-PROCESSING ---
     df.columns = df.columns.str.strip()
