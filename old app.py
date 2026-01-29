@@ -82,7 +82,7 @@ with col1:
 with col2:
     rules_file = st.file_uploader("Upload Validation Rules (CSV/XLSX)", type=["csv", "xlsx"])
 
-if raw_file and rules_file:
+
     # --- DATA IMPORT LOGIC ---
     if import_format == "SPSS (.sav)":
         import pyreadstat
@@ -114,10 +114,12 @@ if raw_file and rules_file:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
-    else:
+    if raw_file and rules_file:
         df = pd.read_csv(raw_file) if raw_file.name.endswith('.csv') else pd.read_excel(raw_file)
     
     rules_df = pd.read_csv(rules_file) if rules_file.name.endswith('.csv') else pd.read_excel(rules_file)
+
+    st.success("✅ Both files uploaded. Ready for Python Validation.")
     
     # --- PRE-PROCESSING ---
     df.columns = df.columns.str.strip()
