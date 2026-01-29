@@ -114,12 +114,14 @@ with col2:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
-    if raw_file and rules_file:
+    else:
         df = pd.read_csv(raw_file) if raw_file.name.endswith('.csv') else pd.read_excel(raw_file)
-    
-    rules_df = pd.read_csv(rules_file) if rules_file.name.endswith('.csv') else pd.read_excel(rules_file)
 
-    st.success("✅ Both files uploaded. Ready for Python Validation.")
+    if raw_file and rules_file:
+        
+        rules_df = pd.read_csv(rules_file) if rules_file.name.endswith('.csv') else pd.read_excel(rules_file)
+
+        st.success("✅ Both files uploaded. Ready for Python Validation.")
     
     # --- PRE-PROCESSING ---
     df.columns = df.columns.str.strip()
