@@ -87,6 +87,7 @@ with col2:
     rules_df = None
 
     # --- DATA IMPORT LOGIC ---
+if raw_file is not None:  # <--- This is the crucial gatekeeper
     if import_format == "SPSS (.sav)":
         import pyreadstat
         # meta contains the Variable Names and Type/Labels for your Macro
@@ -123,8 +124,8 @@ with col2:
         else:
             df = pd.read_excel(raw_file)
 
-if df is not None and rules_file is not None:
     # Read Rules
+if rules_file is not None: # <--- Another gatekeeper
     if rules_file.name.endswith('.csv'):
         rules_df = pd.read_csv(rules_file)
     else:
