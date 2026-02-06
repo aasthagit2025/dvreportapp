@@ -98,11 +98,37 @@ if raw_file is not None:  # <--- This is the crucial gatekeeper
             spss_code = meta.original_variable_types.get(var_name, "F")
             return "String" if spss_code.startswith("A") else "Numeric"
         
-
-
+        def identify_my_type(var_name, data_df):
+            tech_type = translate_type(var_name)
+        
+        # 1. If it's a String, it's 'Other'
+            if tech_type == "String":
+               return "Other"
+        
+        # 2. Check for Multi-Select criteria
+        # First, check if it's part of a naming group (contains an underscore)
+            prefix = var_name.split('_')[0] if '_' in var_name else None
+            if prefix:
+                related_vars = [v for v in meta.column_names if v.startswith(prefix + "_")]
+            
+                if len(related_vars) > 1:
+                # Check the actual data values for this specific variable
+                   unique_vals = data_df[var_name].dropna().unique()
+                
+                # Check if values are only 0, 1, or empty (standard binary multi-select)
+                   is_binary = all(val in [0, 1, 0.0, 1.0] for val in unique_vals)
+                
+                   if is_binary:
+                      return "Multi"
+        
+        # 3. Default to Single for Grids, Ratings, Rankings, or standalone numerics
+                return "Single"
+        
+        
         sync_df = pd.DataFrame({
         "Var Name": meta.column_names,
-        "Type": [translate_type(n) for n in meta.column_names]
+        "Type": [translate_type(n) for n in meta.column_names],
+        "MyType": [identify_my_type(n, df) for n in meta.column_names]
     })
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
