@@ -157,12 +157,12 @@ if raw_file is not None:  # <--- This is the crucial gatekeeper
   
          output = BytesIO()
          with pd.ExcelWriter(output, engine='openpyxl') as writer:
-              sync_df.to_excel(writer, index=False, sheet_name='Metadata')
-         processed_data = output.getvalue()
+          sync_df.to_excel(writer, index=False, sheet_name='Metadata')
+          processed_data = output.getvalue()
         
         # Display metadata for macro reference
-        st.success("✅ SPSS Variable View extracted!")
-        st.download_button(
+    st.success("✅ SPSS Variable View extracted!")
+    st.download_button(
         label="📥 Download Sync File for Macro",
         data=processed_data,
         file_name="macro_sync.xlsx",
@@ -383,6 +383,7 @@ if rules_file is not None: # <--- Another gatekeeper
             for r_idx in rows_with_errors:
                 ws.cell(row=r_idx + 2, column=rid_idx).fill = red_fill
 
-        st.download_button("Download Full Report & Highlighting", output.getvalue(), "Final_Validation_Report.xlsx")
+        st.download_button("Download Full Re" \
+        "port & Highlighting", output.getvalue(), "Final_Validation_Report.xlsx")
     else:
         st.success("✅ Your data is clean!")
