@@ -123,31 +123,56 @@ if raw_file is not None:  # <--- This is the crucial gatekeeper
         
         # 3. Default to Single for Grids, Ratings, Rankings, or standalone numerics
                 return "Single"
+            # --- NEW: MIN/MAX EXTRACTOR ---
+    def get_min_max(var_name, current_type):
+        # Leave blank for Multi-Select or Strings (Other)
+        if current_type in ["Multi", "Other"]:
+            return None, None
         
+        # Extract value labels for this variable
+        labels = meta.variable_value_labels.get(var_name)
+        if labels:
+            try:
+                # Convert keys to numeric and find Min/Max
+                numeric_keys = [float(k) for k in labels.keys()]
+                return min(numeric_keys), max(numeric_keys)
+            except (ValueError, TypeError):
+                return None, None
+        return None, None
         
-        sync_df = pd.DataFrame({
-        "Var Name": meta.column_names,
-        "Type": [translate_type(n) for n in meta.column_names],
-        "MyType": [identify_my_type(n, df) for n in meta.column_names]
-    })
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-             sync_df.to_excel(writer, index=False, sheet_name='Metadata')
-        processed_data = output.getvalue()
+# --- BUILD SYNC DATAFRAME ---
+    var_list = []
+    for n in meta.column_names:
+        m_type = identify_my_type(n, df)
+        v_min, v_max = get_min_max(n, m_type)
+        var_list.append({
+            "Var Name": n,
+            "Type": translate_type(n),
+            "MyType": m_type,
+            "Min": v_min,
+            "Max": v_max
+        })
+    
+    sync_df = pd.DataFrame(var_list)
+  
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+         sync_df.to_excel(writer, index=False, sheet_name='Metadata')
+         processed_data = output.getvalue()
         
         # Display metadata for macro reference
-        st.success("✅ SPSS Variable View extracted!")
-        st.download_button(
+    st.success("✅ SPSS Variable View extracted!")
+    st.download_button(
         label="📥 Download Sync File for Macro",
         data=processed_data,
         file_name="macro_sync.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
-    else:
-        if raw_file.name.endswith('.csv'):
+else:
+    if raw_file.name.endswith('.csv'):
             df = pd.read_csv(raw_file)
-        else:
+    else:
             df = pd.read_excel(raw_file)
 
     # Read Rules
