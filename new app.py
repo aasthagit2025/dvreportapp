@@ -141,11 +141,11 @@ if raw_file is not None:  # <--- This is the crucial gatekeeper
         return None, None
         
 # --- BUILD SYNC DATAFRAME ---
-    var_list = []
-    for n in meta.column_names:
-        m_type = identify_my_type(n, df)
-        v_min, v_max = get_min_max(n, m_type)
-        var_list.append({
+        var_list = []
+        for n in meta.column_names:
+         m_type = identify_my_type(n, df)
+         v_min, v_max = get_min_max(n, m_type)
+         var_list.append({
             "Var Name": n,
             "Type": translate_type(n),
             "MyType": m_type,
@@ -153,16 +153,16 @@ if raw_file is not None:  # <--- This is the crucial gatekeeper
             "Max": v_max
         })
     
-    sync_df = pd.DataFrame(var_list)
+         sync_df = pd.DataFrame(var_list)
   
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-         sync_df.to_excel(writer, index=False, sheet_name='Metadata')
+         output = BytesIO()
+         with pd.ExcelWriter(output, engine='openpyxl') as writer:
+              sync_df.to_excel(writer, index=False, sheet_name='Metadata')
          processed_data = output.getvalue()
         
         # Display metadata for macro reference
-    st.success("✅ SPSS Variable View extracted!")
-    st.download_button(
+        st.success("✅ SPSS Variable View extracted!")
+        st.download_button(
         label="📥 Download Sync File for Macro",
         data=processed_data,
         file_name="macro_sync.xlsx",
