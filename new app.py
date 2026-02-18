@@ -163,11 +163,11 @@ if raw_file is not None:  # <--- This is the crucial gatekeeper
         # Display metadata for macro reference
     st.success("✅ SPSS Variable View extracted!")
     st.download_button(
-        label="📥 Download Sync File for Macro",
-        data=processed_data,
-        file_name="macro_sync.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
+    label="📥 Download Sync File for Macro",
+    data=processed_data,
+    file_name="macro_sync.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    use_container_width=True
     )
 else:
     if raw_file is not None:
