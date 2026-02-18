@@ -93,7 +93,7 @@ if raw_file is not None:  # <--- This is the crucial gatekeeper
         # meta contains the Variable Names and Type/Labels for your Macro
         df, meta = pyreadstat.read_sav(raw_file)
 
-        # Simple translator: If it starts with 'A' it's a String, otherwise it's Numeric
+          # Simple translator: If it starts with 'A' it's a String, otherwise it's Numeric
         def translate_type(var_name):
             spss_code = meta.original_variable_types.get(var_name, "F")
             return "String" if spss_code.startswith("A") else "Numeric"
@@ -170,11 +170,11 @@ if raw_file is not None:  # <--- This is the crucial gatekeeper
         use_container_width=True
     )
 else:
-    if raw_file.name.endswith('.csv'):
+    if raw_file is not None:
+        if raw_file.name.endswith('.csv'):
             df = pd.read_csv(raw_file)
-    else:
-            df = pd.read_excel(raw_file)
-
+        else:
+            df = pd.read_excel(raw_file)   
     # Read Rules
 if rules_file is not None: # <--- Another gatekeeper
     if rules_file.name.endswith('.csv'):
