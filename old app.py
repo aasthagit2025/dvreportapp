@@ -292,7 +292,7 @@ if rules_file is not None: # <--- Another gatekeeper
 
             # 5. STRAIGHTLINER (Robust)
             if "Straightliner" in checks and len(target_cols) > 1 and all_ans:
-                if row_data.nunique() == 1:
+                if row_raw.nunique() == 1:
                     failed_rows.append({"RespID": df.loc[idx, resp_id_col], "Question": q_name, "Issue": "Straightliner detected", "Severity": severity})
                     rows_with_errors.add(idx)
                     for col in target_cols: error_locations.append((idx, col))
@@ -307,7 +307,7 @@ if rules_file is not None: # <--- Another gatekeeper
 
             # 7. OPEN END JUNK (Robust)
             if "OpenEnd_Junk" in checks and is_required[idx] and any_ans:
-                text_val = str(row_data.iloc[0]).lower().strip()
+                text_val = str(row_raw.iloc[0]).lower().strip()
                 min_l = 5
                 if "MinLen=" in conds:
                     try: min_l = int(re.search(r"MinLen=(\d+)", conds).group(1))
